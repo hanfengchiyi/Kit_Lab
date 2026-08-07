@@ -1,0 +1,19 @@
+# 依赖
+node_modules/
+
+# Next.js 构建产物
+.next/
+out/
+
+# 环境变量（真实密钥不进仓库）
+.env
+.env*.local
+
+# SQLite 数据库文件
+*.db
+*.db-journal
+
+# 其他
+*.tsbuildinfo
+next-env.d.ts
+.DS_Store

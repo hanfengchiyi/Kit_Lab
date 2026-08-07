@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String     @id @default(cuid())
+  email     String     @unique
+  password  String // bcrypt 哈希
+  name      String?
+  role      String     @default("user") // "admin" | "user"
+  tools     Tool[]
+  favorites Favorite[]
+  createdAt DateTime   @default(now())
+}
+
+model Tool {
+  id          String     @id @default(cuid())
+  name        String
+  url         String
+  description String
+  category    String
+  tags        String // 逗号分隔，如 "json,格式化"
+  source      String // "self" | "third-party"
+  icon        String?
+  order       Int        @default(0)
+  visibility  String     @default("public") // "public" | "private"
+  ownerId     String? // 私有条目的属主；null 表示管理员维护的公共条目
+  owner       User?      @relation(fields: [ownerId], references: [id])
+  favoritedBy Favorite[]
+  addedAt     DateTime   @default(now())
+}
+
+model Favorite {
+  userId    String
+  toolId    String
+  user      User     @relation(fields: [userId], references: [id])
+  tool      Tool     @relation(fields: [toolId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@id([userId, toolId])
+}

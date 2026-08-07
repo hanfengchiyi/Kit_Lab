@@ -1,0 +1,126 @@
+@import "tailwindcss";
+
+@theme {
+  /* 字体：优先使用 next/font 注入的变量，缺省时退回本地圆润字体栈 */
+  --font-sans: var(--font-baloo, "Baloo 2"), var(--font-kuaile, "ZCOOL KuaiLe"),
+    ui-rounded, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    "Segoe UI", system-ui, sans-serif;
+  --font-display: var(--font-kuaile, "ZCOOL KuaiLe"), var(--font-baloo, "Baloo 2"),
+    ui-rounded, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    system-ui, sans-serif;
+
+  /* pastel 色板：樱粉 / 奶白 / 淡紫 / 柔蓝 */
+  --color-cream: #fff9f4;
+  --color-ink: #57466b;
+
+  --color-sakura-50: #fff1f6;
+  --color-sakura-100: #ffe1ec;
+  --color-sakura-200: #ffc4da;
+  --color-sakura-300: #ff9ec2;
+  --color-sakura-400: #fb74a9;
+  --color-sakura-500: #f2509b;
+  --color-sakura-600: #d63b83;
+  --color-sakura-700: #b52c6b;
+
+  --color-skyblue-50: #eff8ff;
+  --color-skyblue-100: #dcedff;
+  --color-skyblue-200: #b8ddff;
+  --color-skyblue-300: #8ac7ff;
+  --color-skyblue-400: #56aaf7;
+  --color-skyblue-500: #358eea;
+  --color-skyblue-600: #2272cf;
+
+  --color-lav-50: #f6f3ff;
+  --color-lav-100: #ece6ff;
+  --color-lav-200: #d7c9ff;
+  --color-lav-300: #bda4fb;
+  --color-lav-400: #a07ff0;
+  --color-lav-500: #8560dd;
+
+  /* 柔和阴影 */
+  --shadow-soft: 0 4px 20px -6px rgb(242 80 155 / 0.14),
+    0 2px 8px -3px rgb(87 70 107 / 0.08);
+  --shadow-pop: 0 14px 34px -10px rgb(242 80 155 / 0.28),
+    0 4px 14px -6px rgb(87 70 107 / 0.12);
+
+  /* 动画 token，对应工具类 animate-* */
+  --animate-float: float 7s ease-in-out infinite;
+  --animate-float-slow: float 11s ease-in-out infinite;
+  --animate-twinkle: twinkle 3.4s ease-in-out infinite;
+  --animate-fade-up: fade-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-pop: pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  --animate-wiggle: wiggle 2.6s ease-in-out infinite;
+
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0) rotate(0deg);
+    }
+    50% {
+      transform: translateY(-14px) rotate(8deg);
+    }
+  }
+  @keyframes twinkle {
+    0%,
+    100% {
+      opacity: 0.3;
+      transform: scale(0.8);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.12);
+    }
+  }
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes pop {
+    0% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.5) rotate(10deg);
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+  @keyframes wiggle {
+    0%,
+    100% {
+      transform: rotate(-5deg);
+    }
+    50% {
+      transform: rotate(5deg);
+    }
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+::selection {
+  background: var(--color-sakura-200);
+  color: var(--color-sakura-700);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
