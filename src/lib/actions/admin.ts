@@ -6,6 +6,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { listCategoryNames } from "@/lib/categories";
+import { getSetting, setSetting } from "@/lib/settings";
 
 /** 校验当前会话是管理员，否则抛错（服务端二次校验，页面层另有重定向） */
 async function requireAdmin() {
@@ -218,4 +219,44 @@ export async function deleteCategory(name: string): Promise<{ error?: string }> 
   revalidatePath("/");
   revalidatePath("/admin/categories");
   return {};
+}
+
+/* ================= 系统设置 ================= */
+
+/** 读取图标生成 API 的当前配置（Key 打码返回，留空表示未修改） */
+export async function getIconSettings() {
+  await requireAdmin();
+  const baseUrl = (await getSetting("ICON_GEN_API_BASE_URL")) || "";
+  const model = (await getSetting("ICON_GEN_MODEL")) || "grok-imagine-image";
+  const hasKey = !!(await getSetting("ICON_GEN_API_KEY"));
+  return { baseUrl, model, hasKey };
+}
+
+/** 保存图标生成 API 配置；apiKey 留空表示保持原值不变 */
+export async function saveIconSettings(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const baseUrl = String(formData.get("baseUrl") ?? "").trim().slice(0, 500);
+  const model = String(formData.get("model") ?? "").trim().slice(0, 100);
+  const apiKey = String(formData.get("apiKey") ?? "").trim().slice(0, 500);
+  await setSetting("ICON_GEN_API_BASE_URL", baseUrl);
+  await setSetting("ICON_GEN_MODEL", model || "grok-imagine-image");
+  if (apiKey) {
+    await setSetting("ICON_GEN_API_KEY", apiKey);
+  }
+  revalidatePath("/admin/settings");
+}
+
+/* ================= 公告发布状态 ================= */
+
+/** 撤回 / 重新发布公告或守则 */
+export async function toggleAnnouncementPublished(id: string): Promise<void> {
+  await requireAdmin();
+  const item = await prisma.announcement.findUnique({ where: { id } });
+  if (!item) return;
+  await prisma.announcement.update({
+    where: { id },
+    data: { published: !item.published },
+  });
+  revalidatePath("/announcements");
+  revalidatePath("/admin/announcements");
 }

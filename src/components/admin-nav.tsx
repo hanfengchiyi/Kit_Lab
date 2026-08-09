@@ -7,6 +7,7 @@ const ADMIN_LINKS = [
   { href: "/admin/announcements", label: "公告与守则" },
   { href: "/admin/invitations", label: "邀请码" },
   { href: "/admin/grants", label: "分类授权" },
+  { href: "/admin/settings", label: "系统设置" },
 ];
 
 /** 管理后台各子页共用的锚点导航（服务端组件，静态渲染） */

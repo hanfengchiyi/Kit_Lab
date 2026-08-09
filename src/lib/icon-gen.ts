@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { getSetting } from "@/lib/settings";
 
 /**
  * 通过设定的图像生成 API 为工具生成图标。
@@ -12,16 +13,17 @@ import path from "node:path";
 
 const TIMEOUT_MS = 60_000;
 
-function apiConfig() {
-  const baseUrl = (process.env.ICON_GEN_API_BASE_URL || "").trim().replace(/\/+$/, "");
-  const apiKey = (process.env.ICON_GEN_API_KEY || "").trim();
-  const model = (process.env.ICON_GEN_MODEL || "grok-imagine-image").trim();
+/** 图标生成 API 配置：系统设置（数据库）优先，环境变量兜底 */
+async function apiConfig() {
+  const baseUrl = ((await getSetting("ICON_GEN_API_BASE_URL")) || "").replace(/\/+$/, "");
+  const apiKey = (await getSetting("ICON_GEN_API_KEY")) || "";
+  const model = (await getSetting("ICON_GEN_MODEL")) || "grok-imagine-image";
   if (!baseUrl || !apiKey) return null;
   return { baseUrl, apiKey, model };
 }
 
-export function iconGenEnabled(): boolean {
-  return apiConfig() !== null;
+export async function iconGenEnabled(): Promise<boolean> {
+  return (await apiConfig()) !== null;
 }
 
 function iconsDir(): string {
@@ -36,7 +38,7 @@ interface ImagesResponse {
 
 /** 生成图标并落盘，返回站内图标路径（/api/icons/<file>）；失败返回 null 不阻塞建单 */
 export async function generateToolIcon(name: string, description: string): Promise<string | null> {
-  const config = apiConfig();
+  const config = await apiConfig();
   if (!config) return null;
 
   try {

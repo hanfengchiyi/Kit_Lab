@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { deleteAnnouncement } from "@/lib/actions/admin";
+import { deleteAnnouncement, toggleAnnouncementPublished } from "@/lib/actions/admin";
 import { AdminNav } from "@/components/admin-nav";
 import { AnnouncementForm } from "@/components/announcement-form";
 
@@ -87,6 +87,18 @@ export default async function AdminAnnouncementsPage() {
                     }}
                   />
                 </details>
+                <form action={toggleAnnouncementPublished.bind(null, item.id)}>
+                  <button
+                    type="submit"
+                    className={`rounded-lg border-2 px-2.5 py-1 text-xs font-bold transition-colors ${
+                      item.published
+                        ? "border-amber-200 text-amber-500 hover:bg-amber-50"
+                        : "border-emerald-200 text-emerald-500 hover:bg-emerald-50"
+                    }`}
+                  >
+                    {item.published ? "撤回" : "重新发布"}
+                  </button>
+                </form>
                 <form action={deleteAnnouncement.bind(null, item.id)}>
                   <button
                     type="submit"

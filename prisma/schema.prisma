@@ -93,3 +93,10 @@ model CategoryGrant {
 
   @@id([userId, category])
 }
+
+// 系统设置（站长在后台可视化配置，如图标生成 API）
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
