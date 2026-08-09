@@ -115,17 +115,30 @@ export async function adminPushToPublic(toolId: string): Promise<void> {
   revalidatePath("/admin/publish");
 }
 
-/** 管理员把公共工具下架回个人（回到原属主私有） */
+/** 管理员下架公共工具：从首页消失，转为私有（保留原属主；无属主的成为"已下架"条目，仅管理员可见可恢复） */
 export async function adminUnpublish(toolId: string): Promise<void> {
   await requireAdmin();
   const tool = await prisma.tool.findUnique({ where: { id: toolId } });
-  if (!tool || tool.visibility !== "public" || !tool.ownerId) return;
+  if (!tool || tool.visibility !== "public") return;
   await prisma.tool.update({
     where: { id: toolId },
     data: { visibility: "private", publishStatus: "none" },
   });
   revalidatePath("/");
   revalidatePath("/my");
+  revalidatePath("/admin");
+}
+
+/** 管理员把已下架（私有且无属主）的条目重新上架为公开 */
+export async function adminRepublish(toolId: string): Promise<void> {
+  await requireAdmin();
+  const tool = await prisma.tool.findUnique({ where: { id: toolId } });
+  if (!tool || tool.visibility !== "private" || tool.ownerId !== null) return;
+  await prisma.tool.update({
+    where: { id: toolId },
+    data: { visibility: "public" },
+  });
+  revalidatePath("/");
   revalidatePath("/admin");
 }
 

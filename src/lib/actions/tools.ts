@@ -54,6 +54,10 @@ function canManage(
   if (tool.visibility === "public") {
     return user.role === "admin";
   }
+  // 已下架条目（私有且无属主）仅管理员可管理
+  if (tool.ownerId === null) {
+    return user.role === "admin";
+  }
   return tool.ownerId === user.id;
 }
 

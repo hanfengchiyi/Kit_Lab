@@ -5,6 +5,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { ToolRow } from "@/components/tool-row";
 import { AdminNav } from "@/components/admin-nav";
+import { adminRepublish, adminUnpublish } from "@/lib/actions/admin";
 import { EmptyBoxArt } from "@/components/decorations";
 
 export const metadata: Metadata = {
@@ -21,6 +22,11 @@ export default async function AdminPage() {
   const tools = await prisma.tool.findMany({
     where: { visibility: "public" },
     orderBy: [{ category: "asc" }, { order: "asc" }, { addedAt: "asc" }],
+  });
+  // 已下架：私有且无属主的条目（用户工具下架后仍归原属主，不在此列）
+  const takenDown = await prisma.tool.findMany({
+    where: { visibility: "private", ownerId: null },
+    orderBy: { addedAt: "desc" },
   });
 
   return (
@@ -54,9 +60,48 @@ export default async function AdminPage() {
               tool={tool}
               editHref={`/admin/${tool.id}/edit`}
               index={index}
+              extra={
+                <form action={adminUnpublish.bind(null, tool.id)}>
+                  <button
+                    type="submit"
+                    className="text-sm font-bold text-amber-500 transition-colors hover:text-amber-600"
+                    title="下架后从首页消失，仅管理员可见，可随时恢复上架"
+                  >
+                    下架
+                  </button>
+                </form>
+              }
             />
           ))}
         </div>
+      )}
+
+      {takenDown.length > 0 && (
+        <section className="mt-8">
+          <h2 className="mb-3 font-display text-lg text-ink">
+            已下架 <span className="text-sm text-ink/40">（{takenDown.length}，仅管理员可见）</span>
+          </h2>
+          <div className="space-y-3">
+            {takenDown.map((tool, index) => (
+              <ToolRow
+                key={tool.id}
+                tool={tool}
+                editHref={`/admin/${tool.id}/edit`}
+                index={index}
+                extra={
+                  <form action={adminRepublish.bind(null, tool.id)}>
+                    <button
+                      type="submit"
+                      className="text-sm font-bold text-emerald-500 transition-colors hover:text-emerald-600"
+                    >
+                      ↑ 恢复上架
+                    </button>
+                  </form>
+                }
+              />
+            ))}
+          </div>
+        </section>
       )}
     </div>
   );

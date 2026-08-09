@@ -21,7 +21,8 @@ export default async function EditAdminToolPage({
 
   const { id } = await params;
   const tool = await prisma.tool.findUnique({ where: { id } });
-  if (!tool || tool.visibility !== "public") {
+  // 公共条目，或已下架（私有且无属主）的条目，管理员均可编辑
+  if (!tool || (tool.visibility !== "public" && tool.ownerId !== null)) {
     notFound();
   }
 
