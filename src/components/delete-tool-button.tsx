@@ -3,7 +3,15 @@
 import { useTransition } from "react";
 import { deleteTool } from "@/lib/actions/tools";
 
-export function DeleteToolButton({ id, name }: { id: string; name: string }) {
+export function DeleteToolButton({
+  id,
+  name,
+  removesLocalFiles = false,
+}: {
+  id: string;
+  name: string;
+  removesLocalFiles?: boolean;
+}) {
   const [pending, startTransition] = useTransition();
 
   return (
@@ -11,7 +19,8 @@ export function DeleteToolButton({ id, name }: { id: string; name: string }) {
       type="button"
       disabled={pending}
       onClick={() => {
-        if (window.confirm(`确定删除「${name}」吗？该操作不可恢复。`)) {
+        const detail = removesLocalFiles ? "，本地保存的 HTML 和资源文件也会一并删除" : "";
+        if (window.confirm(`确定删除「${name}」吗${detail}？该操作不可恢复。`)) {
           startTransition(() => deleteTool(id));
         }
       }}

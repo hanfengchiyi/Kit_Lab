@@ -13,6 +13,8 @@ export interface ToolRowTool {
   tags: string;
   source: string;
   icon: string | null;
+  kind?: string;
+  htmlBytes?: number;
 }
 
 interface ToolRowProps {
@@ -21,10 +23,12 @@ interface ToolRowProps {
   editHref: string;
   /** 列表序号，用于 stagger 入场动画延迟 */
   index: number;
+  /** HTML 工具可传入按当前环境解析后的独立内容域名链接 */
+  href?: string;
 }
 
 /** /my 与 /admin 共用的工具列表行：图标、徽标、描述、编辑/删除操作 */
-export function ToolRow({ tool, editHref, index }: ToolRowProps) {
+export function ToolRow({ tool, editHref, index, href }: ToolRowProps) {
   return (
     <div
       className="flex animate-fade-up flex-wrap items-center gap-3 rounded-2xl border-2 border-sakura-100 bg-white p-4 shadow-soft transition-all hover:-translate-y-0.5 hover:shadow-pop"
@@ -39,7 +43,7 @@ export function ToolRow({ tool, editHref, index }: ToolRowProps) {
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <a
-            href={tool.url}
+            href={href || tool.url}
             target="_blank"
             rel="noreferrer"
             className="font-bold text-ink transition-colors hover:text-sakura-500"
@@ -58,6 +62,11 @@ export function ToolRow({ tool, editHref, index }: ToolRowProps) {
           <span className="rounded-full bg-sakura-50 px-2 py-0.5 text-xs font-bold text-sakura-500">
             {tool.category}
           </span>
+          {tool.kind === "html" && (
+            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-600">
+              HTML · {formatBytes(tool.htmlBytes || 0)}
+            </span>
+          )}
           {parseTags(tool.tags).map((tag) => (
             <span
               key={tag}
@@ -76,8 +85,19 @@ export function ToolRow({ tool, editHref, index }: ToolRowProps) {
         >
           编辑
         </Link>
-        <DeleteToolButton id={tool.id} name={tool.name} />
+        <DeleteToolButton
+          id={tool.id}
+          name={tool.name}
+          removesLocalFiles={tool.kind === "html"}
+        />
       </div>
     </div>
   );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }

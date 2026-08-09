@@ -4,7 +4,7 @@
 
 Kit Lab 是一个个人工具库网站，把分散在各处的工具链接集中到一个站点统一管理：
 
-- **自研工具入口**：自己开发的在线小工具部署在不同的地方，这里作为它们的统一入口；
+- **自研工具入口**：既可收录部署在别处的链接，也可直接上传单文件 HTML 或带资源的 ZIP；
 - **第三方工具导航**：平时收藏的好用外部工具 / 网站链接。
 
 站点**公开可浏览**；同时提供注册登录，登录后可以收藏工具、添加自己的私有工具。
@@ -14,7 +14,7 @@ Kit Lab 是一个个人工具库网站，把分散在各处的工具链接集中
 ### 目标
 
 - 访客打开页面就能按分类 / 标签浏览公共工具库；
-- 注册登录后：收藏公共工具、维护自己的私有工具条目（仅自己可见）；
+- 注册登录后：收藏公共工具、维护自己的私有工具条目，并在本地保存 HTML 工具（每人 1 GB）；
 - 管理员（站长）通过界面维护公共条目，不需要改代码重新部署；
 - 部署在自己的服务器上，数据完全自主可控。
 
@@ -44,6 +44,9 @@ Kit Lab 是一个个人工具库网站，把分散在各处的工具链接集中
 
 - 收藏公共工具，在「我的收藏」中查看；
 - 添加 / 编辑 / 删除自己的私有工具（其他访客和用户不可见）。
+- 上传 `.html` / `.htm`，或带 CSS、JS、图片等资源的 `.zip`；上传后可直接打开使用；
+- 每位用户拥有 1 GB 独立额度，按 ZIP 解压后的实际文件总量计算，删除后自动归还；
+- 上传文件流式落盘，ZIP 会拦截目录穿越、软链接、超额解压及异常文件数量。
 
 **管理后台（仅管理员）**
 
@@ -80,7 +83,7 @@ Kit Lab 是一个个人工具库网站，把分散在各处的工具链接集中
 | 校验 | Zod | v4 | 注册与工具表单的服务端入参校验 |
 | 部署 | PM2 + Nginx 反向代理 | — | 见第 7 节 |
 
-数据变更以 **Server Actions** 为主（登录、收藏、工具增删改），仅注册走 `POST /api/register`；
+数据变更以 **Server Actions** 为主（登录、收藏、工具增删改）；注册与流式 HTML 上传走 Route Handler；
 受保护页面（`/favorites`、`/my`、`/admin`）由 `src/middleware.ts` 统一做登录重定向，写操作在服务端二次校验权限。
 
 ## 4. 数据结构设计
@@ -94,6 +97,7 @@ model User {
   password  String     // bcrypt 哈希
   name      String?
   role      String     @default("user") // "admin" | "user"
+  htmlStorageUsedBytes Int @default(0)
   tools     Tool[]
   favorites Favorite[]
   createdAt DateTime   @default(now())
@@ -114,6 +118,10 @@ model Tool {
   owner       User?      @relation(fields: [ownerId], references: [id])
   favoritedBy Favorite[]
   addedAt     DateTime   @default(now())
+  kind            String  @default("link") // "link" | "html"
+  htmlEntry       String?
+  htmlBytes       Int     @default(0)
+  htmlAccessToken String? @unique
 }
 
 model Favorite {
@@ -142,6 +150,10 @@ Tool 字段说明：
 | `visibility` | `"public"` / `"private"` | 是 | 公共条目全站可见，私有条目仅属主可见 |
 | `ownerId` | string | 私有必填 | 私有条目属主；公共条目为空 |
 | `addedAt` | datetime | 自动 | 收录时间 |
+| `kind` | `"link"` / `"html"` | 自动 | 外部链接或本地 HTML 工具 |
+| `htmlEntry` | string | HTML 必填 | ZIP 内入口文件相对路径 |
+| `htmlBytes` | number | 自动 | 本地实际保存的文件总大小 |
+| `htmlAccessToken` | string | HTML 必填 | 256 位随机内容访问令牌，不使用可枚举 ID 暴露文件 |
 
 分类清单（示例，可按需调整，保持用词一致）：开发工具、文本处理、图片处理、效率办公、设计资源、其他。
 
@@ -150,6 +162,7 @@ Tool 字段说明：
 - 访客与所有登录用户都能看到全部 `public` 条目；
 - `private` 条目只对 `ownerId` 对应的用户可见；
 - 只有 `role = "admin"` 的用户能创建 / 修改 `public` 条目。
+- HTML 工具元数据仍为私有；内容地址使用不可猜测令牌。拿到完整内容地址的人可以访问该工具，因此不要在 HTML 包中放入密钥或敏感资料。
 
 ## 5. 项目结构
 
@@ -165,6 +178,7 @@ Kit_Lab/
 │   └── seed.ts               # 初始账号 + 示例公共工具
 ├── deploy/
 │   └── nginx.conf            # Nginx 反向代理样例
+├── data/user-html-tools/     # 默认上传目录（运行时生成，不进 Git）
 └── src/
     ├── auth.ts               # Auth.js 主配置（Credentials authorize，bcrypt 校验）
     ├── auth.config.ts        # 页面/JWT/会话回调与路由授权规则
@@ -173,9 +187,9 @@ Kit_Lab/
     │   ├── page.tsx          # 首页：公共工具库（分类分组 + 标签筛选）
     │   ├── login/ register/  # 登录页 / 注册页
     │   ├── favorites/        # 我的收藏（需登录）
-    │   ├── my/               # 我的私有工具（需登录，含 new、[id]/edit）
+    │   ├── my/               # 我的私有工具（含链接、HTML 上传、编辑）
     │   ├── admin/            # 公共条目管理（仅管理员，含 new、[id]/edit）
-    │   └── api/              # auth（Auth.js 接管）与 register 接口
+    │   └── api/              # auth、register、HTML 流式上传与内容读取
     ├── components/           # Navbar、ToolBrowser、ToolCard、ToolForm、FavoriteButton 等
     └── lib/                  # Prisma client 单例、常量（分类清单）、Server Actions
 ```
@@ -190,6 +204,11 @@ cp .env.example .env         # 生成 AUTH_SECRET，其余默认值即可本地�
 npx prisma migrate dev       # 初始化本地数据库（首次会顺带执行 seed）
 npm run dev                  # http://localhost:3000
 ```
+
+本地调试上传的 HTML 工具时，建议主站用 `http://localhost:3000`，并在 `.env` 设置
+`HTML_TOOL_PUBLIC_ORIGIN="http://127.0.0.1:3000"`；修改后需重启 Next.js。两个地址指向
+同一个服务，但浏览器将它们视为不同来源，可避免用户脚本接触主站登录态，同时保留
+`localStorage` 和正常网络请求能力。若改用其他端口，两处端口需保持一致。
 
 其他常用命令：`npm run lint`（ESLint）、`npm run build && npm run start`（生产构建与启动）、
 `npx prisma db seed`（重复执行 seed，按邮箱 upsert，可安全重跑）、`npx prisma studio`（可视化查看数据）。
@@ -207,7 +226,9 @@ Seed 会自动创建两个账号（可用 `.env` 中的 `ADMIN_*` / `USER_*` 变
 
 - Node.js LTS + PM2（`npm i -g pm2`）；
 - Nginx 做反向代理；
-- SQLite 数据库文件放在代码目录之外（如 `/var/lib/kit-lab/prod.db`），通过 `DATABASE_URL` 指向，避免发版时被覆盖。
+- SQLite 数据库文件放在代码目录之外（如 `/var/lib/kit-lab/prod.db`），通过 `DATABASE_URL` 指向；
+- 创建 HTML 持久化目录（如 `/var/lib/kit-lab/html-tools`），确保运行 PM2 的用户可写，并设置 `HTML_TOOL_STORAGE_DIR`；
+- 为用户内容准备独立域名（如 `tools.example.com`），设置 `HTML_TOOL_PUBLIC_ORIGIN`。未配置时系统会启用同源安全沙箱，`localStorage` 等能力会受限。
 
 ### 7.2 发布流程
 
@@ -221,24 +242,24 @@ pm2 restart kit-lab        # 首次部署：pm2 start npm --name kit-lab -- star
 
 ### 7.3 Nginx 反向代理
 
-`deploy/nginx.conf` 保存一份样例，核心内容：
+`deploy/nginx.conf` 保存完整样例。主站的上传路径需允许 1 GB 请求并关闭代理缓冲：
 
 ```nginx
 server {
     listen 80;
     server_name kit.example.com;
 
-    location / {
+    location = /api/html-tools/upload {
+        client_max_body_size 1g;
+        proxy_request_buffering off;
+        proxy_read_timeout 300s;
         proxy_pass http://127.0.0.1:3000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 ```
 
-修改 `server_name` 为实际域名后，放入 `sites-available` 并软链到 `sites-enabled`，
+样例还包含 `tools.example.com` 独立内容站点，只代理 `/api/html-tools/content/`，并主动移除 Cookie。
+修改两个 `server_name` 为实际域名后，放入 `sites-available` 并软链到 `sites-enabled`，
 `sudo nginx -t` 检查通过后 `sudo systemctl reload nginx`。
 
 ### 7.4 HTTPS
@@ -247,17 +268,18 @@ server {
 
 ```bash
 sudo apt install certbot python3-certbot-nginx
-sudo certbot --nginx -d kit.example.com
+sudo certbot --nginx -d kit.example.com -d tools.example.com
 ```
 
 certbot 会自动修改 Nginx 配置并配置证书自动续期。
 
 ### 7.5 数据备份
 
-SQLite 备份就是定期拷贝数据库文件：
+备份必须同时包含 SQLite 与 HTML 工具目录：
 
 ```bash
 cp /var/lib/kit-lab/prod.db /var/backups/kit-lab/prod-$(date +%F).db
+tar -czf /var/backups/kit-lab/html-tools-$(date +%F).tar.gz -C /var/lib/kit-lab html-tools
 ```
 
 建议用 cron 每日执行，并只保留最近 7 份。
@@ -269,12 +291,13 @@ cp /var/lib/kit-lab/prod.db /var/backups/kit-lab/prod-$(date +%F).db
 - **公共条目**：管理员登录后进入 `/admin` 增删改；
 - **收藏**：登录用户在卡片上点收藏，到 `/favorites` 查看；
 - **私有工具**：登录用户在 `/my` 管理自己的条目；
+- **HTML 工具**：在 `/my` 查看用量并上传；删除条目会同步删除本地文件并归还额度；
 - `category` 保持用词一致，新增分类前先确认现有清单里没有合适的；
 - 第三方链接定期人工检查是否失效（路线图中有死链检查一项）。
 
 ## 9. 路线图
 
-- **第一期（✅ 已完成）**：公共工具分类 / 标签展示、注册登录、收藏、私有工具、管理后台；部署到自己的服务器按第 7 节执行即可；
+- **第一期（✅ 已完成）**：公共工具分类 / 标签展示、注册登录、收藏、私有工具、HTML 上传与 1 GB 配额、管理后台；
 - **第二期**：实时搜索过滤（✅ 首页已完成）、深色模式、最近使用记录；
 - **第三期**：第三方登录（GitHub / Google OAuth）、死链检查脚本、数据导入导出；
 - **远期（可选）**：数据量或用户量增长后迁移 PostgreSQL；PWA 支持。

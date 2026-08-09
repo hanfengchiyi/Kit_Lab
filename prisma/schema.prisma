@@ -8,14 +8,15 @@ datasource db {
 }
 
 model User {
-  id        String     @id @default(cuid())
-  email     String     @unique
-  password  String // bcrypt 哈希
-  name      String?
-  role      String     @default("user") // "admin" | "user"
-  tools     Tool[]
-  favorites Favorite[]
-  createdAt DateTime   @default(now())
+  id                   String     @id @default(cuid())
+  email                String     @unique
+  password             String // bcrypt 哈希
+  name                 String?
+  role                 String     @default("user") // "admin" | "user"
+  htmlStorageUsedBytes Int        @default(0)
+  tools                Tool[]
+  favorites            Favorite[]
+  createdAt            DateTime   @default(now())
 }
 
 model Tool {
@@ -33,6 +34,10 @@ model Tool {
   owner       User?      @relation(fields: [ownerId], references: [id])
   favoritedBy Favorite[]
   addedAt     DateTime   @default(now())
+  kind            String @default("link") // "link" | "html"
+  htmlEntry       String?
+  htmlBytes       Int    @default(0)
+  htmlAccessToken String? @unique
 }
 
 model Favorite {

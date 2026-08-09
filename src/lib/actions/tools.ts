@@ -6,6 +6,11 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { CATEGORIES } from "@/lib/constants";
+import {
+  purgeStagedHtmlTool,
+  restoreStagedHtmlTool,
+  stageHtmlToolDeletion,
+} from "@/lib/html-tools";
 
 export interface ToolFormState {
   error?: string;
@@ -15,7 +20,7 @@ const toolSchema = z.object({
   id: z.string().optional(),
   visibility: z.enum(["public", "private"]),
   name: z.string().trim().min(1, "请填写名称").max(50, "名称最长 50 字"),
-  url: z.string().trim().url("链接格式不正确，需以 http:// 或 https:// 开头"),
+  url: z.string().trim().min(1, "请填写链接").max(2048, "链接过长"),
   description: z.string().trim().min(1, "请填写描述").max(200, "描述最长 200 字"),
   category: z.enum(CATEGORIES, { message: "请选择有效的分类" }),
   tags: z.string().trim().max(100, "标签总长最长 100 字").optional().default(""),
@@ -30,6 +35,14 @@ function normalizeTags(tags: string): string {
     .map((tag) => tag.trim())
     .filter(Boolean)
     .join(",");
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    return ["http:", "https:"].includes(new URL(value).protocol);
+  } catch {
+    return false;
+  }
 }
 
 /** 判断当前用户是否有权修改指定条目：公共条目仅管理员，私有条目仅属主 */
@@ -63,27 +76,38 @@ export async function saveTool(
     return { error: "只有管理员可以维护公共条目" };
   }
 
+  const existing = data.id
+    ? await prisma.tool.findUnique({ where: { id: data.id } })
+    : null;
+  if (data.id && !existing) {
+    return { error: "条目不存在" };
+  }
+  if (existing && !canManage(existing, session.user)) {
+    return { error: "没有权限修改该条目" };
+  }
+  const editingHtmlTool = existing?.kind === "html";
+  if (!editingHtmlTool && !isHttpUrl(data.url)) {
+    return { error: "链接格式不正确，需以 http:// 或 https:// 开头" };
+  }
+
   const values = {
     name: data.name,
-    url: data.url,
+    url: editingHtmlTool ? existing.url : data.url,
     description: data.description,
     category: data.category,
     tags: normalizeTags(data.tags),
-    source: data.source,
+    source: editingHtmlTool ? "self" : data.source,
     icon: data.icon || null,
     order: data.order,
-    visibility: data.visibility,
-    ownerId: data.visibility === "private" ? session.user.id : null,
+    visibility: editingHtmlTool ? existing.visibility : data.visibility,
+    ownerId: editingHtmlTool
+      ? existing.ownerId
+      : data.visibility === "private"
+        ? session.user.id
+        : null,
   };
 
   if (data.id) {
-    const existing = await prisma.tool.findUnique({ where: { id: data.id } });
-    if (!existing) {
-      return { error: "条目不存在" };
-    }
-    if (!canManage(existing, session.user)) {
-      return { error: "没有权限修改该条目" };
-    }
     await prisma.tool.update({ where: { id: data.id }, data: values });
   } else {
     await prisma.tool.create({ data: values });
@@ -93,7 +117,9 @@ export async function saveTool(
   revalidatePath("/my");
   revalidatePath("/admin");
   revalidatePath("/favorites");
-  redirect(data.visibility === "public" ? "/admin" : "/my");
+  redirect(
+    (editingHtmlTool ? existing.visibility : data.visibility) === "public" ? "/admin" : "/my",
+  );
 }
 
 /** 删除工具条目：私有条目仅属主可删，公共条目仅管理员可删 */
@@ -106,9 +132,53 @@ export async function deleteTool(id: string): Promise<void> {
   if (!existing || !canManage(existing, session.user)) {
     return;
   }
-  // 数据模型未配置级联删除，先清理关联收藏
-  await prisma.favorite.deleteMany({ where: { toolId: id } });
-  await prisma.tool.delete({ where: { id } });
+  const isHtmlTool = existing.kind === "html" && !!existing.ownerId;
+  let stagedDirectory: string | null = null;
+  if (isHtmlTool) {
+    try {
+      stagedDirectory = await stageHtmlToolDeletion(existing.ownerId!, existing.id);
+    } catch (error) {
+      console.error(`HTML 工具目录暂存失败（${existing.id}）：`, error);
+      return;
+    }
+  }
+
+  try {
+    // 数据模型未配置级联删除，先清理关联收藏；HTML 工具同时归还用户额度。
+    await prisma.$transaction(async (transaction) => {
+      await transaction.favorite.deleteMany({ where: { toolId: id } });
+      await transaction.tool.delete({ where: { id } });
+      if (isHtmlTool && existing.htmlBytes > 0) {
+        const owner = await transaction.user.findUnique({
+          where: { id: existing.ownerId! },
+          select: { htmlStorageUsedBytes: true },
+        });
+        if (owner) {
+          await transaction.user.update({
+            where: { id: existing.ownerId! },
+            data: {
+              htmlStorageUsedBytes: Math.max(0, owner.htmlStorageUsedBytes - existing.htmlBytes),
+            },
+          });
+        }
+      }
+    });
+  } catch (error) {
+    if (stagedDirectory && existing.ownerId) {
+      await restoreStagedHtmlTool(stagedDirectory, existing.ownerId, existing.id).catch(
+        (restoreError) => {
+          console.error(`HTML 工具目录恢复失败（${existing.id}）：`, restoreError);
+        },
+      );
+    }
+    throw error;
+  }
+
+  if (stagedDirectory) {
+    await purgeStagedHtmlTool(stagedDirectory).catch((error) => {
+      console.error(`HTML 工具暂存目录清理失败（${existing.id}）：`, error);
+    });
+  }
 
   revalidatePath("/");
   revalidatePath("/my");

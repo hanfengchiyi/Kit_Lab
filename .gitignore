@@ -13,6 +13,12 @@ out/
 *.db
 *.db-journal
 
+# 用户上传的 HTML 工具（运行时持久化数据）
+data/user-html-tools/
+
+# 本地测试用 HTML 工具与调试脚本（非生产文件）
+data/html_tool/
+
 # 其他
 *.tsbuildinfo
 next-env.d.ts
