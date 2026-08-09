@@ -41,6 +41,8 @@ export default async function EditMyToolPage({
           source: tool.source,
           icon: tool.icon,
           order: tool.order,
+          kind: tool.kind,
+          htmlBytes: tool.htmlBytes,
         }}
       />
     </div>

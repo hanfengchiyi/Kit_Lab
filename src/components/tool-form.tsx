@@ -15,6 +15,8 @@ export interface ToolFormInitial {
   source: string;
   icon: string | null;
   order: number;
+  kind?: string;
+  htmlBytes?: number;
 }
 
 interface ToolFormProps {
@@ -62,20 +64,30 @@ export function ToolForm({ visibility, initial, cancelHref }: ToolFormProps) {
         />
       </div>
 
-      <div>
-        <label htmlFor="url" className={labelClass}>
-          链接 <span className="text-red-500">*</span>
-        </label>
-        <input
-          id="url"
-          name="url"
-          type="url"
-          required
-          defaultValue={initial?.url}
-          className={inputClass}
-          placeholder="https://"
-        />
-      </div>
+      {initial?.kind === "html" ? (
+        <div className="rounded-2xl border-2 border-amber-100 bg-amber-50/60 px-4 py-3">
+          <input type="hidden" name="url" value={initial.url} />
+          <p className="text-sm font-bold text-amber-700">本地 HTML 工具</p>
+          <p className="mt-1 text-xs leading-relaxed text-amber-700/70">
+            此处只修改展示信息；HTML 与资源文件由系统保管，删除工具时会一并清理。
+          </p>
+        </div>
+      ) : (
+        <div>
+          <label htmlFor="url" className={labelClass}>
+            链接 <span className="text-red-500">*</span>
+          </label>
+          <input
+            id="url"
+            name="url"
+            type="url"
+            required
+            defaultValue={initial?.url}
+            className={inputClass}
+            placeholder="https://"
+          />
+        </div>
+      )}
 
       <div>
         <label htmlFor="description" className={labelClass}>
