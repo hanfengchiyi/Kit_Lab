@@ -1,16 +1,17 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { CATEGORIES } from "@/lib/constants";
 import { setCategoryGrants } from "@/lib/actions/admin";
 
 interface GrantEditorProps {
   userId: string;
-  initialGrants: string[]; // 空数组 = 不限分类
+  initialGrants: string[]; // 个人单独授权的分组
+  categories: string[]; // 全部分组
+  defaultCategories: string[]; // 默认全员授权的分组（无需单独授权）
 }
 
 /** 单个用户的分类授权编辑器：全不勾 = 不限分类；勾选后仅可用所选分类 */
-export function GrantEditor({ userId, initialGrants }: GrantEditorProps) {
+export function GrantEditor({ userId, initialGrants, categories, defaultCategories }: GrantEditorProps) {
   const [selected, setSelected] = useState<string[]>(initialGrants);
   const [saved, setSaved] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -32,21 +33,27 @@ export function GrantEditor({ userId, initialGrants }: GrantEditorProps) {
   return (
     <div className="mt-2.5">
       <div className="flex flex-wrap gap-1.5">
-        {CATEGORIES.map((category) => {
-          const active = selected.includes(category);
+        {categories.map((category) => {
+          const isDefault = defaultCategories.includes(category);
+          const active = isDefault || selected.includes(category);
           return (
             <button
               key={category}
               type="button"
-              onClick={() => toggle(category)}
+              onClick={() => !isDefault && toggle(category)}
+              disabled={isDefault}
+              title={isDefault ? "该分组默认全员可用，无需单独授权" : undefined}
               aria-pressed={active}
               className={`rounded-full px-3 py-1 text-xs font-bold transition-all ${
-                active
-                  ? "bg-sakura-400 text-white shadow-soft"
-                  : "border-2 border-sakura-100 bg-white text-ink/50 hover:border-sakura-300"
+                isDefault
+                  ? "cursor-not-allowed bg-emerald-100 text-emerald-600"
+                  : active
+                    ? "bg-sakura-400 text-white shadow-soft"
+                    : "border-2 border-sakura-100 bg-white text-ink/50 hover:border-sakura-300"
               }`}
             >
               {category}
+              {isDefault ? " · 默认" : ""}
             </button>
           );
         })}
@@ -62,7 +69,8 @@ export function GrantEditor({ userId, initialGrants }: GrantEditorProps) {
         </button>
         {saved && <span className="text-xs font-bold text-emerald-500">✓ 已保存</span>}
         <span className="text-xs text-ink/35">
-          {selected.length === 0 ? "当前：不限分类" : `当前：仅可用 ${selected.length} 个分类`}
+          可用 = 默认分组（绿色）+ 勾选分组
+          {selected.length > 0 ? `（额外授权 ${selected.length} 个）` : ""}
         </span>
       </div>
     </div>

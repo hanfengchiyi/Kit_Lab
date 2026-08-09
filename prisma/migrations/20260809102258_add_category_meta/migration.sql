@@ -1,0 +1,7 @@
+-- CreateTable
+CREATE TABLE "CategoryMeta" (
+    "name" TEXT NOT NULL PRIMARY KEY,
+    "order" INTEGER NOT NULL DEFAULT 0,
+    "defaultGrant" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

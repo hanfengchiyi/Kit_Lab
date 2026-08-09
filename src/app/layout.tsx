@@ -3,6 +3,7 @@ import { Baloo_2, ZCOOL_KuaiLe } from "next/font/google";
 import "./globals.css";
 import { auth } from "@/auth";
 import { AppShell } from "@/components/app-shell";
+import { listCategoryNames } from "@/lib/categories";
 
 // 活泼字体：Baloo 2（英数）+ ZCOOL KuaiLe（中文），经 CSS 变量注入 globals.css 的字体栈
 const baloo = Baloo_2({
@@ -35,7 +36,7 @@ export default async function RootLayout({
   return (
     <html lang="zh-CN" className={`${baloo.variable} ${kuaile.variable}`}>
       <body className="min-h-screen bg-cream font-sans text-ink antialiased">
-        <AppShell user={session?.user ?? null}>{children}</AppShell>
+        <AppShell user={session?.user ?? null} categories={await listCategoryNames()}>{children}</AppShell>
       </body>
     </html>
   );

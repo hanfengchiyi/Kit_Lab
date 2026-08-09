@@ -1,20 +1,27 @@
 import { prisma } from "@/lib/prisma";
+import { listCategories } from "@/lib/categories";
 
 /**
  * 取用户可使用的分类集合：
- * - null 表示不限分类（访客、管理员、没有任何授权记录的用户）
- * - Set 表示仅可使用其中的分类
+ * - 管理员返回 null（不限分类）；
+ * - 其他人（含访客）：defaultGrant=true 的分组 ∪ 个人被单独授权的分组。
  */
 export async function getAllowedCategories(
   user: { id: string; role?: string } | undefined | null,
 ): Promise<Set<string> | null> {
-  if (!user || user.role === "admin") return null;
-  const grants = await prisma.categoryGrant.findMany({
-    where: { userId: user.id },
-    select: { category: true },
-  });
-  if (grants.length === 0) return null;
-  return new Set(grants.map((g) => g.category));
+  if (user?.role === "admin") return null;
+
+  const metas = await listCategories();
+  const allowed = new Set(metas.filter((m) => m.defaultGrant).map((m) => m.name));
+
+  if (user) {
+    const grants = await prisma.categoryGrant.findMany({
+      where: { userId: user.id },
+      select: { category: true },
+    });
+    for (const grant of grants) allowed.add(grant.category);
+  }
+  return allowed;
 }
 
 /** 判断某分类是否允许使用 */

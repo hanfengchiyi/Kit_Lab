@@ -13,7 +13,7 @@ import {
   removeHtmlToolDirectory,
   removeUploadStaging,
 } from "@/lib/html-tools";
-import { CATEGORIES } from "@/lib/constants";
+import { listCategoryNames } from "@/lib/categories";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -23,7 +23,7 @@ export const maxDuration = 300;
 const metadataSchema = z.object({
   name: z.string().trim().min(1, "请填写名称").max(50, "名称最长 50 字"),
   description: z.string().trim().min(1, "请填写描述").max(200, "描述最长 200 字"),
-  category: z.enum(CATEGORIES, { message: "请选择有效的分类" }),
+  category: z.string().trim().min(1, "请选择分类").max(20, "分类名过长"),
   tags: z.string().trim().max(100, "标签总长最长 100 字").default(""),
   icon: z.string().trim().max(8, "图标最多 8 个字符").default(""),
   order: z.number().int("排序需为整数").default(0),
@@ -176,7 +176,9 @@ export async function POST(request: Request) {
           name: parsed.data.name,
           url: relativeUrl,
           description: parsed.data.description,
-          category: parsed.data.category,
+          category: (await listCategoryNames()).includes(parsed.data.category)
+            ? parsed.data.category
+            : "其他",
           tags: normalizeTags(parsed.data.tags),
           source: "self",
           icon: parsed.data.icon || null,

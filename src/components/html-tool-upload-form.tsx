@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useState, type FormEvent } from "react";
-import { CATEGORIES } from "@/lib/constants";
 
 const inputClass =
   "w-full rounded-xl border-2 border-sakura-100 bg-white px-4 py-2.5 text-sm shadow-sm transition-colors placeholder:text-ink/25 focus:border-sakura-400 focus:outline-none focus:ring-4 focus:ring-sakura-100";
@@ -12,9 +11,11 @@ const labelClass = "mb-1.5 block text-sm font-bold text-ink/70";
 export function HtmlToolUploadForm({
   remainingBytes,
   quotaBytes,
+  categories,
 }: {
   remainingBytes: number;
   quotaBytes: number;
+  categories: string[];
 }) {
   const router = useRouter();
   const statusId = useId();
@@ -149,7 +150,7 @@ export function HtmlToolUploadForm({
           </label>
           <select id="category" name="category" required defaultValue="" className={inputClass}>
             <option value="" disabled>请选择分类</option>
-            {CATEGORIES.map((category) => <option key={category}>{category}</option>)}
+            {categories.map((category) => <option key={category}>{category}</option>)}
           </select>
         </div>
         <div>

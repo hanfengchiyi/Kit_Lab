@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import Link from "next/link";
 import { saveTool } from "@/lib/actions/tools";
-import { CATEGORIES, SOURCES } from "@/lib/constants";
+import { SOURCES } from "@/lib/constants";
 
 export interface ToolFormInitial {
   id: string;
@@ -23,6 +23,7 @@ interface ToolFormProps {
   visibility: "public" | "private";
   initial?: ToolFormInitial;
   cancelHref: string;
+  categories: string[];
 }
 
 const inputClass =
@@ -32,7 +33,7 @@ const primaryButtonClass =
   "rounded-xl bg-gradient-to-r from-sakura-400 to-sakura-500 px-5 py-2.5 text-sm font-bold text-white shadow-soft transition-all hover:shadow-pop active:scale-95 disabled:opacity-50";
 
 /** 新增 / 编辑工具条目表单，/my（私有）与 /admin（公共）共用 */
-export function ToolForm({ visibility, initial, cancelHref }: ToolFormProps) {
+export function ToolForm({ visibility, initial, cancelHref, categories }: ToolFormProps) {
   const [state, formAction, pending] = useActionState(saveTool, undefined);
 
   return (
@@ -120,7 +121,7 @@ export function ToolForm({ visibility, initial, cancelHref }: ToolFormProps) {
             <option value="" disabled>
               请选择分类
             </option>
-            {CATEGORIES.map((category) => (
+            {categories.map((category) => (
               <option key={category} value={category}>
                 {category}
               </option>

@@ -77,7 +77,15 @@ model Invitation {
   createdAt DateTime  @default(now())
 }
 
-// 分类授权：用户某分类可用。用户没有任何授权记录时视为全部可用（向后兼容）
+// 工具分组（分类）元数据：管理员可新建分组；defaultGrant=false 的分组需逐人授权
+model CategoryMeta {
+  name         String  @id
+  order        Int     @default(0)
+  defaultGrant Boolean @default(true) // true=所有人默认可用；false=需站长单独授权
+  createdAt    DateTime @default(now())
+}
+
+// 分类授权：把 defaultGrant=false 的分组单独分配给指定用户
 model CategoryGrant {
   userId   String
   category String

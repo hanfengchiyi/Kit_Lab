@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { CATEGORIES } from "@/lib/constants";
+import { listCategoryNames } from "@/lib/categories";
 import {
   purgeStagedHtmlTool,
   restoreStagedHtmlTool,
@@ -23,7 +23,7 @@ const toolSchema = z.object({
   name: z.string().trim().min(1, "请填写名称").max(50, "名称最长 50 字"),
   url: z.string().trim().min(1, "请填写链接").max(2048, "链接过长"),
   description: z.string().trim().min(1, "请填写描述").max(200, "描述最长 200 字"),
-  category: z.enum(CATEGORIES, { message: "请选择有效的分类" }),
+  category: z.string().trim().min(1, "请选择分类").max(20, "分类名过长"),
   tags: z.string().trim().max(100, "标签总长最长 100 字").optional().default(""),
   source: z.enum(["self", "third-party"], { message: "请选择来源" }),
   icon: z.string().trim().max(8, "图标最多 8 个字符").optional().default(""),
@@ -72,6 +72,11 @@ export async function saveTool(
     return { error: parsed.error.issues[0]?.message ?? "表单数据不合法" };
   }
   const data = parsed.data;
+
+  const knownCategories = new Set(await listCategoryNames());
+  if (!knownCategories.has(data.category)) {
+    return { error: "请选择有效的分类" };
+  }
 
   if (data.visibility === "public" && session.user.role !== "admin") {
     return { error: "只有管理员可以维护公共条目" };
@@ -204,10 +209,20 @@ export async function requestPublish(id: string): Promise<{ error?: string }> {
   if (tool.publishStatus === "pending") {
     return { error: "已在审批队列中，请耐心等待" };
   }
-  await prisma.tool.update({
-    where: { id },
-    data: { publishStatus: "pending", publishNote: null },
-  });
+  // 站长（管理员）自己的工具无需审批，直接推送为公开
+  if (session.user.role === "admin") {
+    await prisma.tool.update({
+      where: { id },
+      data: { visibility: "public", publishStatus: "approved", publishNote: null },
+    });
+    revalidatePath("/");
+    revalidatePath("/admin");
+  } else {
+    await prisma.tool.update({
+      where: { id },
+      data: { publishStatus: "pending", publishNote: null },
+    });
+  }
   revalidatePath("/my");
   revalidatePath("/admin/publish");
   return {};

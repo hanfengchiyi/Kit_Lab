@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { AdminNav } from "@/components/admin-nav";
 import { GrantEditor } from "@/components/grant-editor";
+import { listCategories } from "@/lib/categories";
 
 export const metadata: Metadata = {
   title: "分类授权",
@@ -17,6 +18,7 @@ export default async function GrantsPage() {
     redirect("/");
   }
 
+  const metas = await listCategories();
   const users = await prisma.user.findMany({
     orderBy: { createdAt: "asc" },
     include: { categoryGrants: true },
@@ -28,7 +30,7 @@ export default async function GrantsPage() {
       <div className="mb-6">
         <h1 className="font-display text-2xl text-ink">分类授权</h1>
         <p className="mt-1 text-sm text-ink/45">
-          控制每个用户能使用哪些工具分类。不做任何勾选表示「不限分类」；勾选后该用户首页只显示所选分类的工具。
+          用户可用分组 = 「分组管理」中默认全员授权的分组 ∪ 此处为个人勾选的分组。绿色为默认分组，无需勾选。
         </p>
       </div>
 
@@ -43,13 +45,9 @@ export default async function GrantsPage() {
                   管理员
                 </span>
               )}
-              {user.categoryGrants.length > 0 ? (
+              {user.categoryGrants.length > 0 && (
                 <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-500">
-                  受限 · {user.categoryGrants.length} 个分类
-                </span>
-              ) : (
-                <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-500">
-                  不限分类
+                  额外授权 {user.categoryGrants.length} 个分组
                 </span>
               )}
             </div>
@@ -59,6 +57,8 @@ export default async function GrantsPage() {
               <GrantEditor
                 userId={user.id}
                 initialGrants={user.categoryGrants.map((g) => g.category)}
+                categories={metas.map((m) => m.name)}
+                defaultCategories={metas.filter((m) => m.defaultGrant).map((m) => m.name)}
               />
             )}
           </div>

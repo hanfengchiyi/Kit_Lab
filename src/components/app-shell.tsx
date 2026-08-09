@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logout } from "@/lib/actions/auth";
-import { CATEGORIES } from "@/lib/constants";
 import {
   CloseIcon,
   HomeIcon,
@@ -26,6 +25,7 @@ interface ShellUser {
 
 interface AppShellProps {
   user: ShellUser | null;
+  categories: string[];
   children: React.ReactNode;
 }
 
@@ -39,7 +39,7 @@ function getFocusable(container: HTMLElement | null): HTMLElement[] {
 }
 
 /** 全站外壳：桌面端左侧固定侧边栏，移动端顶栏 + 抽屉式侧边栏 */
-export function AppShell({ user, children }: AppShellProps) {
+export function AppShell({ user, categories, children }: AppShellProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const pathname = usePathname();
   const drawerRef = useRef<HTMLElement | null>(null);
@@ -132,7 +132,7 @@ export function AppShell({ user, children }: AppShellProps) {
 
       {/* 桌面端固定侧边栏 */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 md:block">
-        <SidebarBody user={user} pathname={pathname} />
+        <SidebarBody user={user} categories={categories} pathname={pathname} />
       </aside>
 
       {/* 移动端抽屉（遮罩 + 滑入面板）；关闭时 inert 防止键盘焦点落入 */}
@@ -164,7 +164,7 @@ export function AppShell({ user, children }: AppShellProps) {
           >
             <CloseIcon className="size-5" />
           </button>
-          <SidebarBody user={user} pathname={pathname} />
+          <SidebarBody user={user} categories={categories} pathname={pathname} />
         </aside>
       </div>
 
@@ -177,7 +177,7 @@ export function AppShell({ user, children }: AppShellProps) {
 }
 
 /** 侧边栏主体，桌面栏与移动抽屉共用 */
-function SidebarBody({ user, pathname }: { user: ShellUser | null; pathname: string }) {
+function SidebarBody({ user, categories, pathname }: { user: ShellUser | null; categories: string[]; pathname: string }) {
   const navItems = [
     { href: "/", label: "首页", icon: HomeIcon },
     { href: "/announcements", label: "公告守则", icon: StarIcon },
@@ -231,7 +231,7 @@ function SidebarBody({ user, pathname }: { user: ShellUser | null; pathname: str
       <div className="mt-5 px-5">
         <p className="mb-2 text-xs font-bold tracking-widest text-ink/35">分类速览</p>
         <div className="flex flex-wrap gap-1.5">
-          {CATEGORIES.map((category) => (
+          {categories.map((category) => (
             <Link
               key={category}
               href={`/#${encodeURIComponent(category)}`}

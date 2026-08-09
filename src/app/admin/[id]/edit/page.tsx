@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { ToolForm } from "@/components/tool-form";
+import { listCategoryNames } from "@/lib/categories";
 
 export const metadata: Metadata = {
   title: "编辑公共工具",
@@ -30,6 +31,7 @@ export default async function EditAdminToolPage({
       <ToolForm
         visibility="public"
         cancelHref="/admin"
+        categories={await listCategoryNames()}
         initial={{
           id: tool.id,
           name: tool.name,

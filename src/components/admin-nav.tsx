@@ -2,6 +2,7 @@ import Link from "next/link";
 
 const ADMIN_LINKS = [
   { href: "/admin", label: "公共工具" },
+  { href: "/admin/categories", label: "分组管理" },
   { href: "/admin/publish", label: "推送审批" },
   { href: "/admin/announcements", label: "公告与守则" },
   { href: "/admin/invitations", label: "邀请码" },

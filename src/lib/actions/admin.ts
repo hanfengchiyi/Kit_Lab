@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { CATEGORIES } from "@/lib/constants";
+import { listCategoryNames } from "@/lib/categories";
 
 /** 校验当前会话是管理员，否则抛错（服务端二次校验，页面层另有重定向） */
 async function requireAdmin() {
@@ -136,7 +136,8 @@ export async function setCategoryGrants(userId: string, granted: string[]): Prom
   await requireAdmin();
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return;
-  const valid = granted.filter((c) => (CATEGORIES as readonly string[]).includes(c));
+  const known = new Set(await listCategoryNames());
+  const valid = granted.filter((c) => known.has(c));
   await prisma.$transaction([
     prisma.categoryGrant.deleteMany({ where: { userId } }),
     ...valid.map((category) =>
@@ -145,4 +146,63 @@ export async function setCategoryGrants(userId: string, granted: string[]): Prom
   ]);
   revalidatePath("/admin/grants");
   revalidatePath("/");
+}
+
+/* ================= 分组（分类）管理 ================= */
+
+const categorySchema = z.object({
+  name: z.string().trim().min(1, "请填写分组名称").max(20, "分组名称最长 20 字"),
+  order: z.coerce.number().int().default(0),
+});
+
+/** 新建分组；默认勾选"全员默认可用" */
+export async function createCategory(formData: FormData): Promise<{ error?: string }> {
+  await requireAdmin();
+  const parsed = categorySchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "表单数据不合法" };
+  }
+  const existing = await prisma.categoryMeta.findUnique({ where: { name: parsed.data.name } });
+  if (existing) {
+    return { error: "已存在同名分组" };
+  }
+  await prisma.categoryMeta.create({
+    data: {
+      name: parsed.data.name,
+      order: parsed.data.order,
+      defaultGrant: formData.get("defaultGrant") === "on",
+    },
+  });
+  revalidatePath("/");
+  revalidatePath("/admin/categories");
+  return {};
+}
+
+/** 切换分组的"默认全员授权"开关 */
+export async function toggleCategoryDefault(name: string): Promise<void> {
+  await requireAdmin();
+  const meta = await prisma.categoryMeta.findUnique({ where: { name } });
+  if (!meta) return;
+  await prisma.categoryMeta.update({
+    where: { name },
+    data: { defaultGrant: !meta.defaultGrant },
+  });
+  revalidatePath("/");
+  revalidatePath("/admin/categories");
+}
+
+/** 删除分组：仅当没有任何工具使用该分组时允许；同时清理相关授权记录 */
+export async function deleteCategory(name: string): Promise<{ error?: string }> {
+  await requireAdmin();
+  const used = await prisma.tool.count({ where: { category: name } });
+  if (used > 0) {
+    return { error: `该分组下还有 ${used} 个工具，请先移走或删除这些工具` };
+  }
+  await prisma.$transaction([
+    prisma.categoryGrant.deleteMany({ where: { category: name } }),
+    prisma.categoryMeta.delete({ where: { name } }),
+  ]);
+  revalidatePath("/");
+  revalidatePath("/admin/categories");
+  return {};
 }

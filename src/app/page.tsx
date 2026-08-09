@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { CATEGORIES, parseTags, type ToolDTO } from "@/lib/constants";
+import { parseTags, type ToolDTO } from "@/lib/constants";
+import { listCategoryNames } from "@/lib/categories";
 import { getAllowedCategories } from "@/lib/grants";
 import { ToolBrowser, type ToolGroup } from "@/components/tool-browser";
 import { CloudPuff, SakuraFlower, SparkleStar, WaveDivider } from "@/components/decorations";
@@ -45,8 +46,9 @@ export default async function HomePage() {
   });
 
   // 按分类清单顺序分组；不在清单内的分类归入「其他」
-  const knownCategories = new Set<string>(CATEGORIES);
-  const groups: ToolGroup[] = CATEGORIES.map((category) => ({
+  const categoryNames = await listCategoryNames();
+  const knownCategories = new Set<string>(categoryNames);
+  const groups: ToolGroup[] = categoryNames.map((category) => ({
     category,
     tools: visibleTools.filter((tool) => tool.category === category).map(toDTO),
   }));

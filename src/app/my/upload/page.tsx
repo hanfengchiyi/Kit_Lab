@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { HtmlToolUploadForm } from "@/components/html-tool-upload-form";
 import { HTML_TOOL_QUOTA_BYTES } from "@/lib/html-tools";
+import { listCategoryNames } from "@/lib/categories";
 import { prisma } from "@/lib/prisma";
 
 export const metadata: Metadata = {
@@ -28,6 +29,7 @@ export default async function UploadHtmlToolPage() {
       <HtmlToolUploadForm
         quotaBytes={HTML_TOOL_QUOTA_BYTES}
         remainingBytes={Math.max(0, HTML_TOOL_QUOTA_BYTES - user.htmlStorageUsedBytes)}
+        categories={await listCategoryNames()}
       />
     </div>
   );

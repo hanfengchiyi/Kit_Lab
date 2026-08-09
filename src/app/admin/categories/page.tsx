@@ -1,0 +1,132 @@
+import type { Metadata } from "next";
+import { redirect } from "next/navigation";
+import { auth } from "@/auth";
+import { listCategories } from "@/lib/categories";
+import { createCategory, deleteCategory, toggleCategoryDefault } from "@/lib/actions/admin";
+import { AdminNav } from "@/components/admin-nav";
+
+export const metadata: Metadata = {
+  title: "分组管理",
+};
+
+export const dynamic = "force-dynamic";
+
+export default async function CategoriesAdminPage() {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "admin") {
+    redirect("/");
+  }
+
+  const metas = await listCategories();
+
+  return (
+    <div className="animate-fade-up">
+      <AdminNav />
+      <div className="mb-6">
+        <h1 className="font-display text-2xl text-ink">分组管理</h1>
+        <p className="mt-1 text-sm text-ink/45">
+          新建工具分组，并设置每个分组是「默认全员可用」还是「需单独授权」。
+        </p>
+      </div>
+
+      {/* 新建分组 */}
+      <form
+        action={async (formData) => {
+          "use server";
+          await createCategory(formData);
+        }}
+        className="mb-6 flex flex-wrap items-end gap-3 rounded-2xl border-2 border-sakura-100 bg-white p-4"
+      >
+        <div className="min-w-44 flex-1">
+          <label htmlFor="name" className="mb-1 block text-xs font-bold text-ink/50">
+            分组名称 *
+          </label>
+          <input
+            id="name"
+            name="name"
+            required
+            maxLength={20}
+            className="w-full rounded-xl border-2 border-sakura-100 px-3 py-2 text-sm focus:border-sakura-400 focus:outline-none"
+            placeholder="如：AI 工具"
+          />
+        </div>
+        <div>
+          <label htmlFor="order" className="mb-1 block text-xs font-bold text-ink/50">
+            排序（小在前）
+          </label>
+          <input
+            id="order"
+            name="order"
+            type="number"
+            defaultValue={metas.length + 1}
+            className="w-24 rounded-xl border-2 border-sakura-100 px-3 py-2 text-sm focus:border-sakura-400 focus:outline-none"
+          />
+        </div>
+        <label className="flex items-center gap-2 pb-2 text-sm font-bold text-ink/60">
+          <input
+            type="checkbox"
+            name="defaultGrant"
+            defaultChecked
+            className="size-4 accent-sakura-400"
+          />
+          默认全员可用
+        </label>
+        <button
+          type="submit"
+          className="rounded-xl bg-gradient-to-r from-sakura-400 to-sakura-500 px-4 py-2 text-sm font-bold text-white shadow-soft transition-all hover:shadow-pop active:scale-95"
+        >
+          + 新建分组
+        </button>
+      </form>
+
+      {/* 分组列表 */}
+      <div className="space-y-2.5">
+        {metas.map((meta) => (
+          <div
+            key={meta.name}
+            className="flex flex-wrap items-center gap-3 rounded-2xl border-2 border-sakura-100 bg-white px-4 py-3"
+          >
+            <span className="font-bold text-ink">{meta.name}</span>
+            <span className="text-xs text-ink/35">排序 {meta.order}</span>
+            {meta.defaultGrant ? (
+              <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-500">
+                默认全员可用
+              </span>
+            ) : (
+              <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-500">
+                需单独授权
+              </span>
+            )}
+            <div className="ml-auto flex items-center gap-2">
+              <form action={toggleCategoryDefault.bind(null, meta.name)}>
+                <button
+                  type="submit"
+                  className="rounded-lg border-2 border-sakura-100 px-3 py-1.5 text-xs font-bold text-ink/60 transition-colors hover:bg-sakura-50"
+                >
+                  切换为{meta.defaultGrant ? "「需单独授权」" : "「默认全员可用」"}
+                </button>
+              </form>
+              <form
+                action={async () => {
+                  "use server";
+                  await deleteCategory(meta.name);
+                }}
+              >
+                <button
+                  type="submit"
+                  className="rounded-lg border-2 border-red-100 px-3 py-1.5 text-xs font-bold text-red-400 transition-colors hover:bg-red-50"
+                >
+                  删除
+                </button>
+              </form>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <p className="mt-4 text-xs text-ink/35">
+        说明：删除分组前需先移走或删除该分组下的全部工具；「需单独授权」的分组在「分类授权」页按人分配。
+      </p>
+    </div>
+  );
+}
