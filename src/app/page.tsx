@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { CATEGORIES, parseTags, type ToolDTO } from "@/lib/constants";
+import { getAllowedCategories } from "@/lib/grants";
 import { ToolBrowser, type ToolGroup } from "@/components/tool-browser";
 import { CloudPuff, SakuraFlower, SparkleStar, WaveDivider } from "@/components/decorations";
 
@@ -16,6 +17,12 @@ export default async function HomePage() {
     where: { visibility: "public" },
     orderBy: [{ order: "asc" }, { addedAt: "asc" }],
   });
+
+  // 分类授权：受限用户只看到被授权的分类
+  const allowedCategories = await getAllowedCategories(session?.user);
+  const visibleTools = allowedCategories
+    ? tools.filter((tool) => allowedCategories.has(tool.category))
+    : tools;
 
   const favoriteIds = session?.user
     ? (
@@ -41,9 +48,9 @@ export default async function HomePage() {
   const knownCategories = new Set<string>(CATEGORIES);
   const groups: ToolGroup[] = CATEGORIES.map((category) => ({
     category,
-    tools: tools.filter((tool) => tool.category === category).map(toDTO),
+    tools: visibleTools.filter((tool) => tool.category === category).map(toDTO),
   }));
-  const unknownTools = tools
+  const unknownTools = visibleTools
     .filter((tool) => !knownCategories.has(tool.category))
     .map(toDTO);
   if (unknownTools.length > 0) {

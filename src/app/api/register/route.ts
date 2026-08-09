@@ -10,6 +10,7 @@ const registerSchema = z
     email: z.string().trim().regex(EMAIL_REGEX, "邮箱格式不正确"),
     password: z.string().min(8, "密码至少 8 位"),
     confirmPassword: z.string(),
+    inviteCode: z.string().trim().min(1, "请填写邀请码"),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: "两次输入的密码不一致",
@@ -37,13 +38,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "该邮箱已注册" }, { status: 409 });
   }
 
+  // 邀请制注册：必须提供有效且未使用的邀请码
+  const invitation = await prisma.invitation.findUnique({
+    where: { code: parsed.data.inviteCode },
+  });
+  if (!invitation || invitation.usedById) {
+    return NextResponse.json({ error: "邀请码无效或已被使用" }, { status: 403 });
+  }
+
   const hashedPassword = await bcrypt.hash(parsed.data.password, 10);
-  await prisma.user.create({
+  const user = await prisma.user.create({
     data: {
       email,
       password: hashedPassword,
       name: parsed.data.name || null,
     },
+  });
+  await prisma.invitation.update({
+    where: { id: invitation.id },
+    data: { usedById: user.id, usedAt: new Date() },
   });
 
   return NextResponse.json({ ok: true }, { status: 201 });

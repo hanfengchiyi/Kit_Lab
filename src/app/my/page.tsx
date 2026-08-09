@@ -4,6 +4,7 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { ToolRow } from "@/components/tool-row";
+import { PublishButton } from "@/components/publish-button";
 import { EmptyBoxArt } from "@/components/decorations";
 import { getToolHref, HTML_TOOL_QUOTA_BYTES } from "@/lib/html-tools";
 
@@ -104,6 +105,13 @@ export default async function MyToolsPage() {
               editHref={`/my/${tool.id}/edit`}
               index={index}
               href={getToolHref(tool)}
+              extra={
+                <PublishButton
+                  toolId={tool.id}
+                  status={tool.publishStatus}
+                  note={tool.publishNote}
+                />
+              }
             />
           ))}
         </div>

@@ -9,6 +9,8 @@ import {
   streamFile,
 } from "@/lib/html-tools";
 import { injectProxySnippet } from "@/lib/html-tool-proxy";
+import { categoryAllowed, getAllowedCategories } from "@/lib/grants";
+import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -37,10 +39,19 @@ export async function GET(
 
   const tool = await prisma.tool.findUnique({
     where: { htmlAccessToken: token },
-    select: { id: true, ownerId: true, kind: true },
+    select: { id: true, ownerId: true, kind: true, category: true },
   });
   if (!tool || tool.kind !== "html" || !tool.ownerId) {
     return new NextResponse("Not found", { status: 404 });
+  }
+
+  // 分类授权：受限用户无权使用该分类时，即使拿到内容地址也拒绝访问（工具属主与管理员除外）
+  const session = await auth();
+  if (session?.user?.id !== tool.ownerId) {
+    const allowed = await getAllowedCategories(session?.user);
+    if (!categoryAllowed(allowed, tool.category)) {
+      return new NextResponse("Forbidden", { status: 403 });
+    }
   }
 
   const filePath = resolveHtmlToolAsset(tool.ownerId, tool.id, pathSegments);

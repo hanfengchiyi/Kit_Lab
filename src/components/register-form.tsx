@@ -42,6 +42,7 @@ export function RegisterForm() {
           email: formData.get("email"),
           password,
           confirmPassword,
+          inviteCode: formData.get("inviteCode"),
         }),
       });
       const data = (await response.json()) as { error?: string };
@@ -119,6 +120,18 @@ export function RegisterForm() {
             autoComplete="new-password"
             className={inputClass}
             placeholder="再输入一次密码"
+          />
+        </div>
+        <div>
+          <label htmlFor="inviteCode" className={labelClass}>
+            邀请码 <span className="text-red-500">*</span>
+          </label>
+          <input
+            id="inviteCode"
+            name="inviteCode"
+            required
+            className={inputClass}
+            placeholder="向管理员索取邀请码"
           />
         </div>
         <button

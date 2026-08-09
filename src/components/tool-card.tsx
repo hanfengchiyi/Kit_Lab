@@ -18,7 +18,11 @@ export function ToolCard({ tool, favorited, loggedIn }: ToolCardProps) {
             className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-sakura-50 text-xl transition-transform duration-300 group-hover:scale-110"
             aria-hidden
           >
-            {tool.icon || "🔧"}
+            {tool.icon?.startsWith("/api/icons/") ? (
+              <img src={tool.icon} alt="" className="size-full rounded-xl object-cover" />
+            ) : (
+              tool.icon || "🔧"
+            )}
           </span>
           <a
             href={tool.url}

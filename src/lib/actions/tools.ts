@@ -11,6 +11,7 @@ import {
   restoreStagedHtmlTool,
   stageHtmlToolDeletion,
 } from "@/lib/html-tools";
+import { generateToolIcon } from "@/lib/icon-gen";
 
 export interface ToolFormState {
   error?: string;
@@ -110,6 +111,10 @@ export async function saveTool(
   if (data.id) {
     await prisma.tool.update({ where: { id: data.id }, data: values });
   } else {
+    // 新建条目且未手动指定图标时，尝试通过配置的图像 API 自动生成图标（失败不阻塞）
+    if (!values.icon) {
+      values.icon = await generateToolIcon(data.name, data.description);
+    }
     await prisma.tool.create({ data: values });
   }
 
@@ -184,4 +189,37 @@ export async function deleteTool(id: string): Promise<void> {
   revalidatePath("/my");
   revalidatePath("/admin");
   revalidatePath("/favorites");
+}
+
+/** 用户申请把自己的私有工具推送为公开（进入管理员审批队列） */
+export async function requestPublish(id: string): Promise<{ error?: string }> {
+  const session = await auth();
+  if (!session?.user || !id) {
+    return { error: "请先登录" };
+  }
+  const tool = await prisma.tool.findUnique({ where: { id } });
+  if (!tool || tool.ownerId !== session.user.id || tool.visibility !== "private") {
+    return { error: "条目不存在或无权操作" };
+  }
+  if (tool.publishStatus === "pending") {
+    return { error: "已在审批队列中，请耐心等待" };
+  }
+  await prisma.tool.update({
+    where: { id },
+    data: { publishStatus: "pending", publishNote: null },
+  });
+  revalidatePath("/my");
+  revalidatePath("/admin/publish");
+  return {};
+}
+
+/** 用户撤回未处理的推送申请 */
+export async function cancelPublishRequest(id: string): Promise<void> {
+  const session = await auth();
+  if (!session?.user || !id) return;
+  const tool = await prisma.tool.findUnique({ where: { id } });
+  if (!tool || tool.ownerId !== session.user.id || tool.publishStatus !== "pending") return;
+  await prisma.tool.update({ where: { id }, data: { publishStatus: "none" } });
+  revalidatePath("/my");
+  revalidatePath("/admin/publish");
 }

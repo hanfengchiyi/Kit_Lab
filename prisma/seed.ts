@@ -71,6 +71,41 @@ async function main() {
     });
     console.log(`已为 ${user.email} 添加示例收藏：${tinypng.name}`);
   }
+
+  // 默认用户守则与欢迎公告（upsert 保证可重跑）
+  const ruleContent = [
+    "1. 仅收录合法合规的工具与网站，不得添加违法、侵权或恶意内容。",
+    "2. 上传的 HTML 工具不得包含窃取信息、挖矿或其他恶意脚本。",
+    "3. 不要在工具名称、描述或 HTML 包中放入密码、密钥等敏感资料。",
+    "4. 推送公开的工具需经过管理员审核，请保证描述真实准确。",
+    "5. 违反守则的账号可能被限制分类权限或移除。",
+  ].join(String.fromCharCode(10));
+  const welcomeContent = [
+    "这里是个人工具库小屋：浏览公共工具、收藏心头好、上传自己的 HTML 小工具。",
+    "注册采用邀请制，需要邀请码请联系管理员。",
+  ].join(String.fromCharCode(10));
+  const defaults = [
+    { title: "Kit Lab 用户守则", kind: "rule", order: 1, content: ruleContent },
+    { title: "欢迎来到 Kit Lab", kind: "announcement", order: 1, content: welcomeContent },
+  ];
+  for (const item of defaults) {
+    const existing = await prisma.announcement.findFirst({ where: { title: item.title } });
+    if (existing) {
+      await prisma.announcement.update({ where: { id: existing.id }, data: item });
+    } else {
+      await prisma.announcement.create({ data: { ...item, published: true } });
+    }
+  }
+  console.log("已写入默认公告与用户守则");
+
+  // 两个初始邀请码（注册必须凭邀请码；已在库中存在则跳过）
+  for (const code of ["WELCOME2026", "KITLAB8888"]) {
+    const existing = await prisma.invitation.findUnique({ where: { code } });
+    if (!existing) {
+      await prisma.invitation.create({ data: { code, note: "seed 初始邀请码" } });
+    }
+  }
+  console.log("已确保初始邀请码存在：WELCOME2026 / KITLAB8888");
 }
 
 main()

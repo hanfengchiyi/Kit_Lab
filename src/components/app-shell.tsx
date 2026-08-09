@@ -180,6 +180,7 @@ export function AppShell({ user, children }: AppShellProps) {
 function SidebarBody({ user, pathname }: { user: ShellUser | null; pathname: string }) {
   const navItems = [
     { href: "/", label: "首页", icon: HomeIcon },
+    { href: "/announcements", label: "公告守则", icon: StarIcon },
     ...(user
       ? [
           { href: "/favorites", label: "我的收藏", icon: StarIcon },

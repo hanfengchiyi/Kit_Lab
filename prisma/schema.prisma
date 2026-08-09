@@ -8,36 +8,40 @@ datasource db {
 }
 
 model User {
-  id                   String     @id @default(cuid())
-  email                String     @unique
+  id                   String          @id @default(cuid())
+  email                String          @unique
   password             String // bcrypt 哈希
   name                 String?
-  role                 String     @default("user") // "admin" | "user"
-  htmlStorageUsedBytes Int        @default(0)
+  role                 String          @default("user") // "admin" | "user"
+  htmlStorageUsedBytes Int             @default(0)
   tools                Tool[]
   favorites            Favorite[]
-  createdAt            DateTime   @default(now())
+  categoryGrants       CategoryGrant[]
+  invitations          Invitation[]
+  createdAt            DateTime        @default(now())
 }
 
 model Tool {
-  id          String     @id @default(cuid())
-  name        String
-  url         String
-  description String
-  category    String
-  tags        String // 逗号分隔，如 "json,格式化"
-  source      String // "self" | "third-party"
-  icon        String?
-  order       Int        @default(0)
-  visibility  String     @default("public") // "public" | "private"
-  ownerId     String? // 私有条目的属主；null 表示管理员维护的公共条目
-  owner       User?      @relation(fields: [ownerId], references: [id])
-  favoritedBy Favorite[]
-  addedAt     DateTime   @default(now())
-  kind            String @default("link") // "link" | "html"
+  id              String     @id @default(cuid())
+  name            String
+  url             String
+  description     String
+  category        String
+  tags            String // 逗号分隔，如 "json,格式化"
+  source          String // "self" | "third-party"
+  icon            String?
+  order           Int        @default(0)
+  visibility      String     @default("public") // "public" | "private"
+  publishStatus   String     @default("none") // "none" | "pending" | "approved" | "rejected"
+  publishNote     String?
+  ownerId         String? // 私有条目的属主；null 表示管理员维护的公共条目
+  owner           User?      @relation(fields: [ownerId], references: [id])
+  favoritedBy     Favorite[]
+  addedAt         DateTime   @default(now())
+  kind            String     @default("link") // "link" | "html"
   htmlEntry       String?
-  htmlBytes       Int    @default(0)
-  htmlAccessToken String? @unique
+  htmlBytes       Int        @default(0)
+  htmlAccessToken String?    @unique
 }
 
 model Favorite {
@@ -48,4 +52,36 @@ model Favorite {
   createdAt DateTime @default(now())
 
   @@id([userId, toolId])
+}
+
+// 公告与用户守则（管理员维护；kind 区分类型）
+model Announcement {
+  id        String   @id @default(cuid())
+  title     String
+  content   String
+  kind      String   @default("announcement") // "announcement" | "rule"
+  order     Int      @default(0)
+  published Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// 注册邀请码：注册时必须提供未使用的有效邀请码
+model Invitation {
+  id        String    @id @default(cuid())
+  code      String    @unique
+  note      String?
+  usedById  String?
+  usedBy    User?     @relation(fields: [usedById], references: [id])
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+// 分类授权：用户某分类可用。用户没有任何授权记录时视为全部可用（向后兼容）
+model CategoryGrant {
+  userId   String
+  category String
+  user     User   @relation(fields: [userId], references: [id])
+
+  @@id([userId, category])
 }

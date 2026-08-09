@@ -25,10 +25,12 @@ interface ToolRowProps {
   index: number;
   /** HTML 工具可传入按当前环境解析后的独立内容域名链接 */
   href?: string;
+  /** 额外操作区内容（如「申请公开」按钮） */
+  extra?: React.ReactNode;
 }
 
 /** /my 与 /admin 共用的工具列表行：图标、徽标、描述、编辑/删除操作 */
-export function ToolRow({ tool, editHref, index, href }: ToolRowProps) {
+export function ToolRow({ tool, editHref, index, href, extra }: ToolRowProps) {
   return (
     <div
       className="flex animate-fade-up flex-wrap items-center gap-3 rounded-2xl border-2 border-sakura-100 bg-white p-4 shadow-soft transition-all hover:-translate-y-0.5 hover:shadow-pop"
@@ -38,7 +40,11 @@ export function ToolRow({ tool, editHref, index, href }: ToolRowProps) {
         className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-sakura-50 text-2xl"
         aria-hidden
       >
-        {tool.icon || "🔧"}
+        {tool.icon?.startsWith("/api/icons/") ? (
+              <img src={tool.icon} alt="" className="size-full rounded-xl object-cover" />
+            ) : (
+              tool.icon || "🔧"
+            )}
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
@@ -79,6 +85,7 @@ export function ToolRow({ tool, editHref, index, href }: ToolRowProps) {
         <p className="mt-1 truncate text-sm text-ink/45">{tool.description}</p>
       </div>
       <div className="flex items-center gap-3">
+        {extra}
         <Link
           href={editHref}
           className="text-sm font-bold text-skyblue-500 transition-colors hover:text-skyblue-600"

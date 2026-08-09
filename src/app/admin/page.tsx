@@ -4,6 +4,7 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { ToolRow } from "@/components/tool-row";
+import { AdminNav } from "@/components/admin-nav";
 import { EmptyBoxArt } from "@/components/decorations";
 
 export const metadata: Metadata = {
@@ -24,6 +25,7 @@ export default async function AdminPage() {
 
   return (
     <div className="animate-fade-up">
+      <AdminNav />
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="font-display text-2xl text-ink">管理后台</h1>
