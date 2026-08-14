@@ -1,24 +1,23 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { auth } from "@/auth";
 import { HtmlToolUploadForm } from "@/components/html-tool-upload-form";
 import { HTML_TOOL_QUOTA_BYTES } from "@/lib/html-tools";
 import { listCategoryNames } from "@/lib/categories";
 import { prisma } from "@/lib/prisma";
+import { requireUserPage } from "@/lib/auth-guards";
 
 export const metadata: Metadata = {
   title: "上传 HTML 工具",
 };
 
 export default async function UploadHtmlToolPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireUserPage();
 
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
+  const dbUser = await prisma.user.findUnique({
+    where: { id: user.id },
     select: { htmlStorageUsedBytes: true },
   });
-  if (!user) redirect("/login");
+  if (!dbUser) redirect("/login");
 
   return (
     <div className="animate-fade-up">
@@ -28,7 +27,7 @@ export default async function UploadHtmlToolPage() {
       </div>
       <HtmlToolUploadForm
         quotaBytes={HTML_TOOL_QUOTA_BYTES}
-        remainingBytes={Math.max(0, HTML_TOOL_QUOTA_BYTES - user.htmlStorageUsedBytes)}
+        remainingBytes={Math.max(0, HTML_TOOL_QUOTA_BYTES - dbUser.htmlStorageUsedBytes)}
         categories={await listCategoryNames()}
       />
     </div>

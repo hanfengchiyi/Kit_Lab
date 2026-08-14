@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 import Link from "next/link";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { requireAdminPage } from "@/lib/auth-guards";
 import { ToolRow } from "@/components/tool-row";
 import { AdminNav } from "@/components/admin-nav";
 import { adminRepublish, adminUnpublish } from "@/lib/actions/admin";
@@ -13,11 +12,8 @@ export const metadata: Metadata = {
 };
 
 export default async function AdminPage() {
-  const session = await auth();
   // 非管理员无权访问管理后台
-  if (!session?.user || session.user.role !== "admin") {
-    redirect("/");
-  }
+  await requireAdminPage();
 
   const tools = await prisma.tool.findMany({
     where: { visibility: "public" },

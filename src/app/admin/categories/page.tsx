@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
-import { auth } from "@/auth";
+import { requireAdminPage } from "@/lib/auth-guards";
 import { listCategories } from "@/lib/categories";
-import { createCategory, deleteCategory, toggleCategoryDefault } from "@/lib/actions/admin";
+import { toggleCategoryDefault } from "@/lib/actions/admin";
 import { AdminNav } from "@/components/admin-nav";
+import { CategoryCreateForm } from "@/components/category-create-form";
+import { CategoryDeleteButton } from "@/components/category-delete-button";
 
 export const metadata: Metadata = {
   title: "分组管理",
@@ -12,10 +13,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function CategoriesAdminPage() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "admin") {
-    redirect("/");
-  }
+  await requireAdminPage();
 
   const metas = await listCategories();
 
@@ -29,55 +27,8 @@ export default async function CategoriesAdminPage() {
         </p>
       </div>
 
-      {/* 新建分组 */}
-      <form
-        action={async (formData) => {
-          "use server";
-          await createCategory(formData);
-        }}
-        className="mb-6 flex flex-wrap items-end gap-3 rounded-2xl border-2 border-sakura-100 bg-white p-4"
-      >
-        <div className="min-w-44 flex-1">
-          <label htmlFor="name" className="mb-1 block text-xs font-bold text-ink/50">
-            分组名称 *
-          </label>
-          <input
-            id="name"
-            name="name"
-            required
-            maxLength={20}
-            className="w-full rounded-xl border-2 border-sakura-100 px-3 py-2 text-sm focus:border-sakura-400 focus:outline-none"
-            placeholder="如：AI 工具"
-          />
-        </div>
-        <div>
-          <label htmlFor="order" className="mb-1 block text-xs font-bold text-ink/50">
-            排序（小在前）
-          </label>
-          <input
-            id="order"
-            name="order"
-            type="number"
-            defaultValue={metas.length + 1}
-            className="w-24 rounded-xl border-2 border-sakura-100 px-3 py-2 text-sm focus:border-sakura-400 focus:outline-none"
-          />
-        </div>
-        <label className="flex items-center gap-2 pb-2 text-sm font-bold text-ink/60">
-          <input
-            type="checkbox"
-            name="defaultGrant"
-            defaultChecked
-            className="size-4 accent-sakura-400"
-          />
-          默认全员可用
-        </label>
-        <button
-          type="submit"
-          className="rounded-xl bg-gradient-to-r from-sakura-400 to-sakura-500 px-4 py-2 text-sm font-bold text-white shadow-soft transition-all hover:shadow-pop active:scale-95"
-        >
-          + 新建分组
-        </button>
-      </form>
+      {/* 新建分组（客户端表单，展示服务端错误） */}
+      <CategoryCreateForm nextOrder={metas.length + 1} />
 
       {/* 分组列表 */}
       <div className="space-y-2.5">
@@ -106,19 +57,7 @@ export default async function CategoriesAdminPage() {
                   切换为{meta.defaultGrant ? "「需单独授权」" : "「默认全员可用」"}
                 </button>
               </form>
-              <form
-                action={async () => {
-                  "use server";
-                  await deleteCategory(meta.name);
-                }}
-              >
-                <button
-                  type="submit"
-                  className="rounded-lg border-2 border-red-100 px-3 py-1.5 text-xs font-bold text-red-400 transition-colors hover:bg-red-50"
-                >
-                  删除
-                </button>
-              </form>
+              <CategoryDeleteButton name={meta.name} />
             </div>
           </div>
         ))}

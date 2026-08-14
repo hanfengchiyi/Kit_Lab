@@ -17,15 +17,22 @@ const inputClass =
 /** 系统设置：图标生成 API 的 Base URL / Key / 模型 */
 export function IconSettingsForm({ initial }: IconSettingsFormProps) {
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSaved(false);
+    setError(null);
     const formData = new FormData(event.currentTarget);
     startTransition(async () => {
-      await saveIconSettings(formData);
-      setSaved(true);
+      try {
+        await saveIconSettings(formData);
+        setSaved(true);
+      } catch (cause) {
+        console.error("保存系统设置失败：", cause);
+        setError("保存失败，请稍后再试");
+      }
     });
   };
 
@@ -76,6 +83,11 @@ export function IconSettingsForm({ initial }: IconSettingsFormProps) {
           {pending ? "保存中…" : "保存设置"}
         </button>
         {saved && <span className="text-sm font-bold text-emerald-500">✓ 已保存，立即生效</span>}
+        {error && (
+          <span role="alert" className="text-sm font-bold text-red-500">
+            {error}
+          </span>
+        )}
       </div>
       <p className="text-xs text-ink/35">
         说明：这里配置的是「创建工具时自动生成图标」所用的图像 API，保存在数据库中，优先级高于 .env 环境变量。

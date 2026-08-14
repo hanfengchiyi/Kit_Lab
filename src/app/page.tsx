@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { parseTags, type ToolDTO } from "@/lib/constants";
-import { listCategoryNames } from "@/lib/categories";
+import { toToolDTO, type ToolDTO } from "@/lib/constants";
+import { getCachedCategoryNames } from "@/lib/categories";
 import { getAllowedCategories } from "@/lib/grants";
 import { ToolBrowser, type ToolGroup } from "@/components/tool-browser";
 import { CloudPuff, SakuraFlower, SparkleStar, WaveDivider } from "@/components/decorations";
@@ -34,27 +34,23 @@ export default async function HomePage() {
       ).map((favorite) => favorite.toolId)
     : [];
 
-  const toDTO = (tool: (typeof tools)[number]): ToolDTO => ({
-    id: tool.id,
-    name: tool.name,
-    url: tool.url,
-    description: tool.description,
-    category: tool.category,
-    tags: parseTags(tool.tags),
-    source: tool.source === "self" ? "self" : "third-party",
-    icon: tool.icon,
-  });
-
-  // 按分类清单顺序分组；不在清单内的分类归入「其他」
-  const categoryNames = await listCategoryNames();
+  // 按分类清单顺序分组；不在清单内的分类归入「其他」。
+  // 一次遍历分组，避免对每个分类做全量 filter（O(分类数 × 工具数)）。
+  const categoryNames = await getCachedCategoryNames();
   const knownCategories = new Set<string>(categoryNames);
+  const byCategory = new Map<string, ToolDTO[]>();
+  for (const tool of visibleTools) {
+    const list = byCategory.get(tool.category) ?? [];
+    list.push(toToolDTO(tool));
+    byCategory.set(tool.category, list);
+  }
   const groups: ToolGroup[] = categoryNames.map((category) => ({
     category,
-    tools: visibleTools.filter((tool) => tool.category === category).map(toDTO),
+    tools: byCategory.get(category) ?? [],
   }));
-  const unknownTools = visibleTools
-    .filter((tool) => !knownCategories.has(tool.category))
-    .map(toDTO);
+  const unknownTools = [...byCategory.entries()]
+    .filter(([category]) => !knownCategories.has(category))
+    .flatMap(([, tools]) => tools);
   if (unknownTools.length > 0) {
     const fallback = groups.find((group) => group.category === "其他");
     if (fallback) {

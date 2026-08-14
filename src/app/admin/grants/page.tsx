@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { requireAdminPage } from "@/lib/auth-guards";
 import { AdminNav } from "@/components/admin-nav";
 import { GrantEditor } from "@/components/grant-editor";
 import { listCategories } from "@/lib/categories";
@@ -13,10 +12,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function GrantsPage() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "admin") {
-    redirect("/");
-  }
+  await requireAdminPage();
 
   const metas = await listCategories();
   const users = await prisma.user.findMany({
@@ -34,6 +30,11 @@ export default async function GrantsPage() {
         </p>
       </div>
 
+      {users.length === 0 ? (
+        <p className="rounded-3xl border-2 border-dashed border-sakura-200 bg-white/70 py-14 text-center font-display text-lg text-ink/70">
+          暂无注册用户
+        </p>
+      ) : (
       <div className="space-y-3">
         {users.map((user) => (
           <div key={user.id} className="rounded-2xl border-2 border-sakura-100 bg-white p-4">
@@ -64,6 +65,7 @@ export default async function GrantsPage() {
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 }

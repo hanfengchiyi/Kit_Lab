@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 import Link from "next/link";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { requireAdminPage } from "@/lib/auth-guards";
 import { createInvitation, deleteInvitation } from "@/lib/actions/admin";
 import { AdminNav } from "@/components/admin-nav";
 
@@ -11,10 +10,7 @@ export const metadata: Metadata = {
 };
 
 export default async function InvitationsPage() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "admin") {
-    redirect("/");
-  }
+  await requireAdminPage();
 
   const invitations = await prisma.invitation.findMany({
     orderBy: { createdAt: "desc" },

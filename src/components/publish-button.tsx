@@ -3,9 +3,11 @@
 import { useState, useTransition } from "react";
 import { cancelPublishRequest, requestPublish } from "@/lib/actions/tools";
 
+type PublishStatus = "none" | "pending" | "rejected";
+
 interface PublishButtonProps {
   toolId: string;
-  status: string; // "none" | "pending" | "rejected"
+  status: PublishStatus;
   note?: string | null;
 }
 

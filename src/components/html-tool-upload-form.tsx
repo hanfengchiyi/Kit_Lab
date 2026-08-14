@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { formatBytes } from "@/lib/format";
 import { useRouter } from "next/navigation";
 import { useId, useState, type FormEvent } from "react";
 
@@ -192,9 +193,3 @@ export function HtmlToolUploadForm({
   );
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
-}

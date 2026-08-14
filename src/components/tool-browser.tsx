@@ -76,6 +76,7 @@ export function ToolBrowser({ groups, tags, favoriteIds, loggedIn }: ToolBrowser
           <button
             type="button"
             onClick={() => setActiveTag(null)}
+            aria-pressed={activeTag === null}
             className={`rounded-full px-3.5 py-1.5 text-sm font-bold transition-all active:scale-95 ${
               activeTag === null
                 ? "bg-sakura-400 text-white shadow-soft"
@@ -89,6 +90,7 @@ export function ToolBrowser({ groups, tags, favoriteIds, loggedIn }: ToolBrowser
               key={tag}
               type="button"
               onClick={() => setActiveTag(tag === activeTag ? null : tag)}
+              aria-pressed={activeTag === tag}
               className={`rounded-full px-3.5 py-1.5 text-sm font-bold transition-all active:scale-95 ${
                 activeTag === tag
                   ? "bg-sakura-400 text-white shadow-soft"

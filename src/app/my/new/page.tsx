@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
-import { auth } from "@/auth";
+import { requireUserPage } from "@/lib/auth-guards";
 import { ToolForm } from "@/components/tool-form";
 import { listCategoryNames } from "@/lib/categories";
 
@@ -9,10 +8,7 @@ export const metadata: Metadata = {
 };
 
 export default async function NewMyToolPage() {
-  const session = await auth();
-  if (!session?.user) {
-    redirect("/login");
-  }
+  await requireUserPage();
 
   return (
     <div className="animate-fade-up">

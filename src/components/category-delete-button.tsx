@@ -1,17 +1,10 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { deleteTool } from "@/lib/actions/tools";
+import { deleteCategory } from "@/lib/actions/admin";
 
-export function DeleteToolButton({
-  id,
-  name,
-  removesLocalFiles = false,
-}: {
-  id: string;
-  name: string;
-  removesLocalFiles?: boolean;
-}) {
+/** 删除分组按钮：两步确认 + 展示服务端错误（如分组下仍有工具） */
+export function CategoryDeleteButton({ name }: { name: string }) {
   const [pending, startTransition] = useTransition();
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,21 +15,16 @@ export function DeleteToolButton({
     setError(null);
   };
 
-  const handleFirstClick = () => {
-    setError(null);
-    setConfirming(true);
-    // 5 秒未确认自动恢复，避免误触后停留在危险状态
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(reset, 5000);
-  };
-
   const handleConfirm = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
     startTransition(async () => {
       try {
-        await deleteTool(id);
+        const result = await deleteCategory(name);
+        if (result?.error) {
+          setError(result.error);
+        }
       } catch (cause) {
-        console.error("删除工具失败：", cause);
+        console.error("删除分组失败：", cause);
         setError("删除失败，请稍后再试");
       } finally {
         setConfirming(false);
@@ -46,10 +34,7 @@ export function DeleteToolButton({
 
   if (confirming) {
     return (
-      <span className="flex items-center gap-2">
-        <span className="text-xs font-bold text-ink/50">
-          确认删除「{name}」{removesLocalFiles ? "（含本地 HTML 与资源文件）" : ""}？
-        </span>
+      <span className="flex items-center gap-1.5">
         <button
           type="button"
           disabled={pending}
@@ -75,10 +60,15 @@ export function DeleteToolButton({
       <button
         type="button"
         disabled={pending}
-        onClick={handleFirstClick}
-        className="text-sm text-red-600 hover:text-red-800 disabled:opacity-50"
+        onClick={() => {
+          setError(null);
+          setConfirming(true);
+          if (timerRef.current) clearTimeout(timerRef.current);
+          timerRef.current = setTimeout(reset, 5000);
+        }}
+        className="rounded-lg border-2 border-red-100 px-2.5 py-1 text-xs font-bold text-red-400 transition-colors hover:bg-red-50 disabled:opacity-50"
       >
-        {pending ? "删除中…" : "删除"}
+        删除
       </button>
       {error && (
         <span role="alert" className="text-xs font-bold text-red-500">

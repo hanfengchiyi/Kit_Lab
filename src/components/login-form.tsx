@@ -27,7 +27,7 @@ export function LoginForm({ registered }: { registered: boolean }) {
           </p>
         )}
         {error && (
-          <p className="mb-4 rounded-xl bg-red-50 px-4 py-2.5 text-sm font-bold text-red-500">
+          <p role="alert" className="mb-4 rounded-xl bg-red-50 px-4 py-2.5 text-sm font-bold text-red-500">
             {error}
           </p>
         )}

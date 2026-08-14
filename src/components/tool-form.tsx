@@ -45,7 +45,7 @@ export function ToolForm({ visibility, initial, cancelHref, categories }: ToolFo
       <input type="hidden" name="visibility" value={visibility} />
 
       {state?.error && (
-        <p className="rounded-xl bg-red-50 px-4 py-2.5 text-sm font-bold text-red-500">
+        <p role="alert" className="rounded-xl bg-red-50 px-4 py-2.5 text-sm font-bold text-red-500">
           {state.error}
         </p>
       )}

@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { parseTags } from "@/lib/constants";
+import { formatBytes } from "@/lib/format";
+import type { ToolKind } from "@/lib/tool-schema";
 import { DeleteToolButton } from "@/components/delete-tool-button";
+import { ToolIcon } from "@/components/tool-icon";
 
 /** 列表行所需的最小工具字段，/my 与 /admin 直接传入 Prisma Tool 记录即可 */
 export interface ToolRowTool {
@@ -11,8 +14,10 @@ export interface ToolRowTool {
   category: string;
   /** 数据库中的逗号分隔标签串 */
   tags: string;
+  /** 数据库原始值（"self" | "third-party"） */
   source: string;
   icon: string | null;
+  /** 数据库原始值（"link" | "html"） */
   kind?: string;
   htmlBytes?: number;
 }
@@ -31,21 +36,15 @@ interface ToolRowProps {
 
 /** /my 与 /admin 共用的工具列表行：图标、徽标、描述、编辑/删除操作 */
 export function ToolRow({ tool, editHref, index, href, extra }: ToolRowProps) {
+  // 数据库 source 列收窄为已知取值；未知值按第三方处理
+  const source: "self" | "third-party" = tool.source === "self" ? "self" : "third-party";
+  const kind: ToolKind | undefined = tool.kind === "html" ? "html" : tool.kind === "link" ? "link" : undefined;
   return (
     <div
       className="flex animate-fade-up flex-wrap items-center gap-3 rounded-2xl border-2 border-sakura-100 bg-white p-4 shadow-soft transition-all hover:-translate-y-0.5 hover:shadow-pop"
       style={{ animationDelay: `${Math.min(index, 8) * 50}ms` }}
     >
-      <span
-        className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-sakura-50 text-2xl"
-        aria-hidden
-      >
-        {tool.icon?.startsWith("/api/icons/") ? (
-              <img src={tool.icon} alt="" className="size-full rounded-xl object-cover" />
-            ) : (
-              tool.icon || "🔧"
-            )}
-      </span>
+      <ToolIcon icon={tool.icon} sizeClass="size-11" />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <a
@@ -58,17 +57,17 @@ export function ToolRow({ tool, editHref, index, href, extra }: ToolRowProps) {
           </a>
           <span
             className={`rounded-full px-2 py-0.5 text-xs font-bold ${
-              tool.source === "self"
+              source === "self"
                 ? "bg-emerald-50 text-emerald-600"
                 : "bg-skyblue-50 text-skyblue-500"
             }`}
           >
-            {tool.source === "self" ? "自研" : "第三方"}
+            {source === "self" ? "自研" : "第三方"}
           </span>
           <span className="rounded-full bg-sakura-50 px-2 py-0.5 text-xs font-bold text-sakura-500">
             {tool.category}
           </span>
-          {tool.kind === "html" && (
+          {kind === "html" && (
             <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-600">
               HTML · {formatBytes(tool.htmlBytes || 0)}
             </span>
@@ -95,16 +94,9 @@ export function ToolRow({ tool, editHref, index, href, extra }: ToolRowProps) {
         <DeleteToolButton
           id={tool.id}
           name={tool.name}
-          removesLocalFiles={tool.kind === "html"}
+          removesLocalFiles={kind === "html"}
         />
       </div>
     </div>
   );
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }

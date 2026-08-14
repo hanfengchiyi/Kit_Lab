@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { adminPushToPublic, adminUnpublish, reviewPublish } from "@/lib/actions/admin";
+import { requireAdminPage } from "@/lib/auth-guards";
+import { adminPushToPublic, adminUnpublish } from "@/lib/actions/admin";
 import { AdminNav } from "@/components/admin-nav";
+import { PublishReviewForm } from "@/components/publish-review-form";
 
 export const metadata: Metadata = {
   title: "推送审批",
@@ -12,10 +12,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function PublishReviewPage() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "admin") {
-    redirect("/");
-  }
+  await requireAdminPage();
 
   const [pending, privateTools, publishedFromUsers] = await Promise.all([
     prisma.tool.findMany({
@@ -79,30 +76,7 @@ export default async function PublishReviewPage() {
                     {tool.url}
                   </a>
                 )}
-                <form action={reviewPublish.bind(null, tool.id)} className="mt-3 flex flex-wrap items-center gap-2">
-                  <input
-                    name="note"
-                    maxLength={200}
-                    placeholder="审批备注（可选）"
-                    className="min-w-48 flex-1 rounded-lg border-2 border-sakura-100 px-3 py-1.5 text-xs focus:border-sakura-400 focus:outline-none"
-                  />
-                  <button
-                    type="submit"
-                    name="decision"
-                    value="approve"
-                    className="rounded-lg bg-emerald-400 px-3.5 py-1.5 text-xs font-bold text-white transition-all hover:bg-emerald-500 active:scale-95"
-                  >
-                    ✓ 通过并公开
-                  </button>
-                  <button
-                    type="submit"
-                    name="decision"
-                    value="reject"
-                    className="rounded-lg bg-red-400 px-3.5 py-1.5 text-xs font-bold text-white transition-all hover:bg-red-500 active:scale-95"
-                  >
-                    ✕ 拒绝
-                  </button>
-                </form>
+                <PublishReviewForm toolId={tool.id} />
               </div>
             ))}
           </div>
@@ -154,6 +128,11 @@ export default async function PublishReviewPage() {
         <h2 className="mb-3 font-display text-lg text-ink">
           已公开的用户工具 <span className="text-sm text-ink/40">（{publishedFromUsers.length}）</span>
         </h2>
+        {publishedFromUsers.length === 0 ? (
+          <p className="rounded-2xl border-2 border-dashed border-sakura-200 bg-white/70 py-8 text-center text-sm text-ink/40">
+            暂无已公开的用户工具
+          </p>
+        ) : (
         <div className="space-y-2.5">
           {publishedFromUsers.map((tool) => (
             <div
@@ -176,6 +155,7 @@ export default async function PublishReviewPage() {
             </div>
           ))}
         </div>
+        )}
       </section>
     </div>
   );

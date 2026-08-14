@@ -1,6 +1,5 @@
-"use client";
-
 import { FavoriteButton } from "@/components/favorite-button";
+import { ToolIcon } from "@/components/tool-icon";
 import type { ToolDTO } from "@/lib/constants";
 
 interface ToolCardProps {
@@ -14,16 +13,7 @@ export function ToolCard({ tool, favorited, loggedIn }: ToolCardProps) {
     <div className="group flex h-full flex-col rounded-2xl border-2 border-sakura-100 bg-white p-4 shadow-soft transition-all duration-300 hover:-translate-y-1.5 hover:border-sakura-200 hover:shadow-pop">
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span
-            className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-sakura-50 text-xl transition-transform duration-300 group-hover:scale-110"
-            aria-hidden
-          >
-            {tool.icon?.startsWith("/api/icons/") ? (
-              <img src={tool.icon} alt="" className="size-full rounded-xl object-cover" />
-            ) : (
-              tool.icon || "🔧"
-            )}
-          </span>
+          <ToolIcon icon={tool.icon} />
           <a
             href={tool.url}
             target="_blank"

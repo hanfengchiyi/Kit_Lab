@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
-import { auth } from "@/auth";
+import { requireAdminPage } from "@/lib/auth-guards";
 import { getIconSettings } from "@/lib/actions/admin";
 import { AdminNav } from "@/components/admin-nav";
 import { IconSettingsForm } from "@/components/icon-settings-form";
@@ -12,10 +11,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "admin") {
-    redirect("/");
-  }
+  await requireAdminPage();
 
   const iconSettings = await getIconSettings();
 

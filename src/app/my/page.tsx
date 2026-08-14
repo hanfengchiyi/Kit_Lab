@@ -1,34 +1,31 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 import Link from "next/link";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { requireUserPage } from "@/lib/auth-guards";
 import { ToolRow } from "@/components/tool-row";
 import { PublishButton } from "@/components/publish-button";
 import { EmptyBoxArt } from "@/components/decorations";
 import { getToolHref, HTML_TOOL_QUOTA_BYTES } from "@/lib/html-tools";
+import { formatBytes } from "@/lib/format";
 
 export const metadata: Metadata = {
   title: "我的工具",
 };
 
 export default async function MyToolsPage() {
-  const session = await auth();
-  if (!session?.user) {
-    redirect("/login");
-  }
+  const user = await requireUserPage();
 
-  const [tools, user] = await Promise.all([
+  const [tools, dbUser] = await Promise.all([
     prisma.tool.findMany({
-      where: { ownerId: session.user.id, visibility: "private" },
+      where: { ownerId: user.id, visibility: "private" },
       orderBy: [{ order: "asc" }, { addedAt: "desc" }],
     }),
     prisma.user.findUnique({
-      where: { id: session.user.id },
+      where: { id: user.id },
       select: { htmlStorageUsedBytes: true },
     }),
   ]);
-  const usedBytes = user?.htmlStorageUsedBytes || 0;
+  const usedBytes = dbUser?.htmlStorageUsedBytes || 0;
   const usagePercent = Math.min(100, (usedBytes / HTML_TOOL_QUOTA_BYTES) * 100);
 
   return (
@@ -108,7 +105,7 @@ export default async function MyToolsPage() {
               extra={
                 <PublishButton
                   toolId={tool.id}
-                  status={tool.publishStatus}
+                  status={tool.publishStatus as "none" | "pending" | "rejected"}
                   note={tool.publishNote}
                 />
               }
@@ -118,11 +115,4 @@ export default async function MyToolsPage() {
       )}
     </div>
   );
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }

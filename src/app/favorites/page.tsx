@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 import Link from "next/link";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { parseTags, type ToolDTO } from "@/lib/constants";
+import { requireUserPage } from "@/lib/auth-guards";
+import { toToolDTO, type ToolDTO } from "@/lib/constants";
 import { ToolCard } from "@/components/tool-card";
 import { EmptyBoxArt } from "@/components/decorations";
 
@@ -12,27 +11,15 @@ export const metadata: Metadata = {
 };
 
 export default async function FavoritesPage() {
-  const session = await auth();
-  if (!session?.user) {
-    redirect("/login");
-  }
+  const user = await requireUserPage();
 
   const favorites = await prisma.favorite.findMany({
-    where: { userId: session.user.id },
+    where: { userId: user.id },
     include: { tool: true },
     orderBy: { createdAt: "desc" },
   });
 
-  const tools: ToolDTO[] = favorites.map((favorite) => ({
-    id: favorite.tool.id,
-    name: favorite.tool.name,
-    url: favorite.tool.url,
-    description: favorite.tool.description,
-    category: favorite.tool.category,
-    tags: parseTags(favorite.tool.tags),
-    source: favorite.tool.source === "self" ? "self" : "third-party",
-    icon: favorite.tool.icon,
-  }));
+  const tools: ToolDTO[] = favorites.map((favorite) => toToolDTO(favorite.tool));
 
   return (
     <div className="animate-fade-up">

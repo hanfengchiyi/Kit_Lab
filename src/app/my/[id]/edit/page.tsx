@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import { notFound, redirect } from "next/navigation";
-import { auth } from "@/auth";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { requireUserPage } from "@/lib/auth-guards";
 import { ToolForm } from "@/components/tool-form";
 import { listCategoryNames } from "@/lib/categories";
 
@@ -14,15 +14,12 @@ export default async function EditMyToolPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const session = await auth();
-  if (!session?.user) {
-    redirect("/login");
-  }
+  const user = await requireUserPage();
 
   const { id } = await params;
   const tool = await prisma.tool.findUnique({ where: { id } });
   // 私有条目仅属主可编辑，其他情况一律 404
-  if (!tool || tool.visibility !== "private" || tool.ownerId !== session.user.id) {
+  if (!tool || tool.visibility !== "private" || tool.ownerId !== user.id) {
     notFound();
   }
 

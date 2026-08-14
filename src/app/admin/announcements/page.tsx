@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { requireAdminPage } from "@/lib/auth-guards";
 import { deleteAnnouncement, toggleAnnouncementPublished } from "@/lib/actions/admin";
 import { AdminNav } from "@/components/admin-nav";
 import { AnnouncementForm } from "@/components/announcement-form";
@@ -11,10 +10,7 @@ export const metadata: Metadata = {
 };
 
 export default async function AdminAnnouncementsPage() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "admin") {
-    redirect("/");
-  }
+  await requireAdminPage();
 
   const items = await prisma.announcement.findMany({
     orderBy: [{ kind: "asc" }, { order: "asc" }, { createdAt: "desc" }],

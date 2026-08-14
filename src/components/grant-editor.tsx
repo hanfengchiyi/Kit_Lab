@@ -14,19 +14,27 @@ interface GrantEditorProps {
 export function GrantEditor({ userId, initialGrants, categories, defaultCategories }: GrantEditorProps) {
   const [selected, setSelected] = useState<string[]>(initialGrants);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const toggle = (category: string) => {
     setSaved(false);
+    setError(null);
     setSelected((prev) =>
       prev.includes(category) ? prev.filter((c) => c !== category) : [...prev, category],
     );
   };
 
   const handleSave = () => {
+    setError(null);
     startTransition(async () => {
-      await setCategoryGrants(userId, selected);
-      setSaved(true);
+      try {
+        await setCategoryGrants(userId, selected);
+        setSaved(true);
+      } catch (cause) {
+        console.error("保存分类授权失败：", cause);
+        setError("保存失败，请稍后再试");
+      }
     });
   };
 
@@ -68,6 +76,11 @@ export function GrantEditor({ userId, initialGrants, categories, defaultCategori
           {pending ? "保存中…" : "保存授权"}
         </button>
         {saved && <span className="text-xs font-bold text-emerald-500">✓ 已保存</span>}
+        {error && (
+          <span role="alert" className="text-xs font-bold text-red-500">
+            {error}
+          </span>
+        )}
         <span className="text-xs text-ink/35">
           可用 = 默认分组（绿色）+ 勾选分组
           {selected.length > 0 ? `（额外授权 ${selected.length} 个）` : ""}

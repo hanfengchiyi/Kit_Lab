@@ -35,12 +35,17 @@ export function AnnouncementForm({ initial }: AnnouncementFormProps) {
     <form onSubmit={handleSubmit} className="mt-3 space-y-3">
       {initial && <input type="hidden" name="id" value={initial.id} />}
       {error && (
-        <p className="rounded-xl bg-red-50 px-3 py-2 text-sm font-bold text-red-500">{error}</p>
+        <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm font-bold text-red-500">
+          {error}
+        </p>
       )}
       <div className="flex flex-wrap gap-3">
         <div className="min-w-56 flex-1">
-          <label className="mb-1 block text-xs font-bold text-ink/50">标题 *</label>
+          <label htmlFor="title" className="mb-1 block text-xs font-bold text-ink/50">
+            标题 *
+          </label>
           <input
+            id="title"
             name="title"
             required
             maxLength={80}
@@ -49,15 +54,20 @@ export function AnnouncementForm({ initial }: AnnouncementFormProps) {
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-bold text-ink/50">类型 *</label>
-          <select name="kind" defaultValue={initial?.kind ?? "announcement"} className={inputClass}>
+          <label htmlFor="kind" className="mb-1 block text-xs font-bold text-ink/50">
+            类型 *
+          </label>
+          <select id="kind" name="kind" defaultValue={initial?.kind ?? "announcement"} className={inputClass}>
             <option value="announcement">公告</option>
             <option value="rule">用户守则</option>
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-bold text-ink/50">排序</label>
+          <label htmlFor="order" className="mb-1 block text-xs font-bold text-ink/50">
+            排序
+          </label>
           <input
+            id="order"
             name="order"
             type="number"
             defaultValue={initial?.order ?? 0}
@@ -66,8 +76,11 @@ export function AnnouncementForm({ initial }: AnnouncementFormProps) {
         </div>
       </div>
       <div>
-        <label className="mb-1 block text-xs font-bold text-ink/50">内容 *</label>
+        <label htmlFor="content" className="mb-1 block text-xs font-bold text-ink/50">
+          内容 *
+        </label>
         <textarea
+          id="content"
           name="content"
           required
           maxLength={5000}
@@ -76,8 +89,9 @@ export function AnnouncementForm({ initial }: AnnouncementFormProps) {
           className={inputClass}
         />
       </div>
-      <label className="flex items-center gap-2 text-sm font-bold text-ink/60">
+      <label htmlFor="published" className="flex items-center gap-2 text-sm font-bold text-ink/60">
         <input
+          id="published"
           type="checkbox"
           name="published"
           defaultChecked={initial?.published ?? true}
