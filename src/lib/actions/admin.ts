@@ -1,7 +1,7 @@
 "use server";
 
 import { randomBytes } from "node:crypto";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
@@ -70,7 +70,13 @@ export async function saveAnnouncement(formData: FormData): Promise<{ error?: st
 
 export async function deleteAnnouncement(id: string): Promise<void> {
   await requireAdmin();
-  await prisma.announcement.delete({ where: { id } }).catch(() => {});
+  try {
+    await prisma.announcement.delete({ where: { id } });
+  } catch (error) {
+    // 删除失败要留痕，而不是静默吞掉
+    console.error(`公告删除失败（${id}）：`, error);
+    throw error;
+  }
   revalidatePath("/announcements");
   revalidatePath("/admin/announcements");
 }
@@ -189,6 +195,7 @@ export async function createCategory(formData: FormData): Promise<{ error?: stri
   });
   revalidatePath("/");
   revalidatePath("/admin/categories");
+  revalidateTag("categories");
   return {};
 }
 
@@ -203,6 +210,7 @@ export async function toggleCategoryDefault(name: string): Promise<void> {
   });
   revalidatePath("/");
   revalidatePath("/admin/categories");
+  revalidateTag("categories");
 }
 
 /** 删除分组：仅当没有任何工具使用该分组时允许；同时清理相关授权记录 */
@@ -218,6 +226,7 @@ export async function deleteCategory(name: string): Promise<{ error?: string }> 
   ]);
   revalidatePath("/");
   revalidatePath("/admin/categories");
+  revalidateTag("categories");
   return {};
 }
 

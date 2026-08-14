@@ -26,9 +26,22 @@ export async function toggleFavorite(toolId: string): Promise<FavoriteResult> {
   if (existing) {
     await prisma.favorite.delete({ where });
   } else {
-    await prisma.favorite.create({
-      data: { userId: session.user.id, toolId },
-    });
+    try {
+      await prisma.favorite.create({
+        data: { userId: session.user.id, toolId },
+      });
+    } catch (error) {
+      // 并发双击等场景下唯一约束冲突：视为已收藏
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        (error as { code?: string }).code === "P2002"
+      ) {
+        return { favorited: true };
+      }
+      throw error;
+    }
   }
 
   revalidatePath("/");

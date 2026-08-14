@@ -4,17 +4,33 @@ import {
   copyFile,
   mkdir,
   mkdtemp,
+  readdir,
   rename,
   rm,
   stat,
 } from "node:fs/promises";
 import path from "node:path";
+import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import mime from "mime-types";
 import yauzl, { type Entry, type ZipFile } from "yauzl";
 
 export const HTML_TOOL_QUOTA_BYTES = 1024 * 1024 * 1024;
 export const HTML_TOOL_MAX_FILES = 10_000;
+
+/**
+ * 用户提交的 HTML 包内容不合规（不安全路径 / 软链接 / 超限 / 无入口等）。
+ * 属于客户端输入错误，应作为 4xx 返回，而不是 500。
+ */
+export class PackageRejectedError extends Error {
+  constructor(
+    message: string,
+    readonly status = 400,
+  ) {
+    super(message);
+    this.name = "PackageRejectedError";
+  }
+}
 
 export interface HtmlToolLinkFields {
   url: string;
@@ -62,6 +78,30 @@ export async function removeHtmlToolDirectory(ownerId: string, toolId: string): 
 }
 
 /** 先把待删目录原子移出服务路径；数据库失败时仍可恢复。 */
+/** 顺带清理 .trash 中超过 7 天的残留（崩溃中断等情况下可能遗留） */
+async function sweepTrash(trashRoot: string): Promise<void> {
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  let entries: string[];
+  try {
+    entries = await readdir(trashRoot);
+  } catch {
+    return; // 目录不存在等，无需清理
+  }
+  await Promise.all(
+    entries.map(async (name) => {
+      const target = path.join(trashRoot, name);
+      try {
+        const info = await stat(target);
+        if (info.mtimeMs < cutoff) {
+          await rm(target, { recursive: true, force: true });
+        }
+      } catch {
+        // 单个残留清理失败不影响主流程
+      }
+    }),
+  );
+}
+
 export async function stageHtmlToolDeletion(
   ownerId: string,
   toolId: string,
@@ -70,6 +110,7 @@ export async function stageHtmlToolDeletion(
   const trashRoot = path.join(storageRoot(), ".trash");
   const staged = path.join(trashRoot, `${toolId}-${randomUUID()}`);
   await mkdir(trashRoot, { recursive: true });
+  await sweepTrash(trashRoot).catch(() => {});
   try {
     await rename(source, staged);
     return staged;
@@ -102,7 +143,7 @@ function isZipSymlink(entry: Entry): boolean {
   return (unixMode & 0o170000) === 0o120000;
 }
 
-function validateArchivePath(fileName: string): string {
+export function validateArchivePath(fileName: string): string {
   const normalizedSlashes = fileName.replaceAll("\\", "/");
   if (
     normalizedSlashes.includes("\0") ||
@@ -110,12 +151,12 @@ function validateArchivePath(fileName: string): string {
     /^[a-zA-Z]:/.test(normalizedSlashes) ||
     normalizedSlashes.length > 1024
   ) {
-    throw new Error(`ZIP 中包含不安全的路径：${fileName}`);
+    throw new PackageRejectedError(`ZIP 中包含不安全的路径：${fileName}`);
   }
 
   const segments = normalizedSlashes.split("/").filter(Boolean);
   if (segments.length === 0 || segments.some((segment) => segment === ".." || segment === ".")) {
-    throw new Error(`ZIP 中包含不安全的路径：${fileName}`);
+    throw new PackageRejectedError(`ZIP 中包含不安全的路径：${fileName}`);
   }
 
   for (const segment of segments) {
@@ -124,7 +165,7 @@ function validateArchivePath(fileName: string): string {
       /[. ]$/.test(segment) ||
       /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i.test(segment)
     ) {
-      throw new Error(`ZIP 中包含当前系统不支持的文件名：${fileName}`);
+      throw new PackageRejectedError(`ZIP 中包含当前系统不支持的文件名：${fileName}`);
     }
   }
 
@@ -187,7 +228,7 @@ async function extractZip(
     zipFile.on("entry", (entry) => {
       void (async () => {
         if (isZipSymlink(entry)) {
-          throw new Error(`ZIP 不允许包含软链接：${entry.fileName}`);
+          throw new PackageRejectedError(`ZIP 不允许包含软链接：${entry.fileName}`);
         }
 
         const relativePath = validateArchivePath(entry.fileName);
@@ -195,7 +236,7 @@ async function extractZip(
         const target = path.resolve(destination, ...relativePath.split("/"));
         const destinationPrefix = `${path.resolve(destination)}${path.sep}`;
         if (!target.startsWith(destinationPrefix)) {
-          throw new Error(`ZIP 中包含越界路径：${entry.fileName}`);
+          throw new PackageRejectedError(`ZIP 中包含越界路径：${entry.fileName}`);
         }
 
         if (isDirectory) {
@@ -206,16 +247,17 @@ async function extractZip(
 
         fileCount += 1;
         if (fileCount > HTML_TOOL_MAX_FILES) {
-          throw new Error(`单个 HTML 工具最多包含 ${HTML_TOOL_MAX_FILES} 个文件`);
-        }
-        totalBytes += entry.uncompressedSize;
-        if (totalBytes > maxBytes) {
-          throw new Error("解压后的文件总量超过剩余存储额度");
+          throw new PackageRejectedError(
+            `单个 HTML 工具最多包含 ${HTML_TOOL_MAX_FILES} 个文件`,
+          );
         }
 
         await mkdir(path.dirname(target), { recursive: true });
         const input = await openZipEntry(zipFile, entry);
-        await pipeline(input, createWriteStream(target, { flags: "wx" }));
+        // 按实际写入字节计数（不信任 zip 头声明的 uncompressedSize，防 ZIP 炸弹）
+        const counter = createQuotaCounter(maxBytes - totalBytes);
+        await pipeline(input, counter, createWriteStream(target, { flags: "wx" }));
+        totalBytes += counter.count;
         files.push(relativePath);
         zipFile.readEntry();
       })().catch(fail);
@@ -225,7 +267,32 @@ async function extractZip(
   });
 }
 
-function pickEntryFile(files: string[]): string {
+export interface QuotaCounter extends Transform {
+  /** 累计实际写入的字节数 */
+  readonly count: number;
+}
+
+/**
+ * 实际写入字节计数流：超过 maxBytes 即中断并报错。
+ * 用于解压时按真实写出量记账，防止伪造 zip 头大小绕过配额。
+ */
+export function createQuotaCounter(maxBytes: number): QuotaCounter {
+  let count = 0;
+  const transform = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      count += chunk.length;
+      if (count > maxBytes) {
+        callback(new PackageRejectedError("解压后的实际大小超过剩余存储额度", 413));
+        return;
+      }
+      callback(null, chunk);
+    },
+  }) as QuotaCounter;
+  Object.defineProperty(transform, "count", { get: () => count });
+  return transform;
+}
+
+export function pickEntryFile(files: string[]): string {
   const rootIndex = files.find((file) => file.toLowerCase() === "index.html");
   if (rootIndex) return rootIndex;
 
@@ -238,9 +305,13 @@ function pickEntryFile(files: string[]): string {
   if (htmlFiles.length === 1) return htmlFiles[0];
 
   if (nestedIndexes.length > 1) {
-    throw new Error("ZIP 中有多个 index.html，请只保留一个入口页面或把入口放在 ZIP 根目录");
+    throw new PackageRejectedError(
+      "ZIP 中有多个 index.html，请只保留一个入口页面或把入口放在 ZIP 根目录",
+    );
   }
-  throw new Error("没有找到入口页面；ZIP 根目录需要 index.html，或只包含一个 HTML 文件");
+  throw new PackageRejectedError(
+    "没有找到入口页面；ZIP 根目录需要 index.html，或只包含一个 HTML 文件",
+  );
 }
 
 export async function prepareHtmlToolPackage(
@@ -255,19 +326,19 @@ export async function prepareHtmlToolPackage(
   if (extension === ".html" || extension === ".htm") {
     const fileStat = await stat(packagePath);
     if (fileStat.size > maxBytes) {
-      throw new Error("HTML 文件超过剩余存储额度");
+      throw new PackageRejectedError("HTML 文件超过剩余存储额度", 413);
     }
     await copyFile(packagePath, path.join(destination, "index.html"));
     return { entryFile: "index.html", totalBytes: fileStat.size, fileCount: 1 };
   }
 
   if (extension !== ".zip") {
-    throw new Error("仅支持 .html、.htm 或 .zip 文件");
+    throw new PackageRejectedError("仅支持 .html、.htm 或 .zip 文件");
   }
 
   const extracted = await extractZip(packagePath, destination, maxBytes);
   if (extracted.files.length === 0) {
-    throw new Error("ZIP 文件是空的");
+    throw new PackageRejectedError("ZIP 文件是空的");
   }
   return {
     entryFile: pickEntryFile(extracted.files),

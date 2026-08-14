@@ -2,40 +2,20 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { listCategoryNames } from "@/lib/categories";
+import { normalizeTags } from "@/lib/constants";
 import {
   purgeStagedHtmlTool,
   restoreStagedHtmlTool,
   stageHtmlToolDeletion,
 } from "@/lib/html-tools";
 import { generateToolIcon } from "@/lib/icon-gen";
+import { toolSchema } from "@/lib/tool-schema";
 
 export interface ToolFormState {
   error?: string;
-}
-
-const toolSchema = z.object({
-  id: z.string().optional(),
-  visibility: z.enum(["public", "private"]),
-  name: z.string().trim().min(1, "请填写名称").max(50, "名称最长 50 字"),
-  url: z.string().trim().min(1, "请填写链接").max(2048, "链接过长"),
-  description: z.string().trim().min(1, "请填写描述").max(200, "描述最长 200 字"),
-  category: z.string().trim().min(1, "请选择分类").max(20, "分类名过长"),
-  tags: z.string().trim().max(100, "标签总长最长 100 字").optional().default(""),
-  source: z.enum(["self", "third-party"], { message: "请选择来源" }),
-  icon: z.string().trim().max(8, "图标最多 8 个字符").optional().default(""),
-  order: z.coerce.number().int("排序需为整数").default(0),
-});
-
-function normalizeTags(tags: string): string {
-  return tags
-    .split(/[,，]/)
-    .map((tag) => tag.trim())
-    .filter(Boolean)
-    .join(",");
 }
 
 function isHttpUrl(value: string): boolean {
@@ -158,21 +138,22 @@ export async function deleteTool(id: string): Promise<void> {
   }
 
   try {
-    // 数据模型未配置级联删除，先清理关联收藏；HTML 工具同时归还用户额度。
+    // 数据模型未配置级联删除，先清理关联收藏；HTML 工具同时原子归还用户额度，
+    // 避免与并发上传的 increment 竞争造成账目失真。
     await prisma.$transaction(async (transaction) => {
       await transaction.favorite.deleteMany({ where: { toolId: id } });
       await transaction.tool.delete({ where: { id } });
-      if (isHtmlTool && existing.htmlBytes > 0) {
-        const owner = await transaction.user.findUnique({
-          where: { id: existing.ownerId! },
-          select: { htmlStorageUsedBytes: true },
+      if (isHtmlTool && existing.htmlBytes > 0 && existing.ownerId) {
+        const ownerId = existing.ownerId;
+        const decremented = await transaction.user.updateMany({
+          where: { id: ownerId, htmlStorageUsedBytes: { gte: existing.htmlBytes } },
+          data: { htmlStorageUsedBytes: { decrement: existing.htmlBytes } },
         });
-        if (owner) {
+        if (decremented.count === 0) {
+          // 账目小于应还值（历史数据异常）：直接归零
           await transaction.user.update({
-            where: { id: existing.ownerId! },
-            data: {
-              htmlStorageUsedBytes: Math.max(0, owner.htmlStorageUsedBytes - existing.htmlBytes),
-            },
+            where: { id: ownerId },
+            data: { htmlStorageUsedBytes: 0 },
           });
         }
       }

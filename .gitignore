@@ -12,6 +12,8 @@ out/
 # SQLite 数据库文件
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 
 # 用户上传的 HTML 工具（运行时持久化数据）
 data/user-html-tools/

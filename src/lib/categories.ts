@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { CATEGORIES } from "@/lib/constants";
 
@@ -8,9 +9,13 @@ import { CATEGORIES } from "@/lib/constants";
 export async function listCategories() {
   let metas = await prisma.categoryMeta.findMany({ orderBy: [{ order: "asc" }, { name: "asc" }] });
   if (metas.length === 0) {
-    await prisma.categoryMeta.createMany({
-      data: CATEGORIES.map((name, index) => ({ name, order: index + 1, defaultGrant: true })),
-    });
+    try {
+      await prisma.categoryMeta.createMany({
+        data: CATEGORIES.map((name, index) => ({ name, order: index + 1, defaultGrant: true })),
+      });
+    } catch {
+      // 并发首访同时播种时唯一约束冲突：忽略并重新读取即可
+    }
     metas = await prisma.categoryMeta.findMany({ orderBy: [{ order: "asc" }, { name: "asc" }] });
   }
   return metas;
@@ -20,3 +25,13 @@ export async function listCategories() {
 export async function listCategoryNames(): Promise<string[]> {
   return (await listCategories()).map((m) => m.name);
 }
+
+/**
+ * 布局与首页共用的分类名缓存：避免每个请求都查库。
+ * 管理端新增/切换/删除分组时 revalidateTag("categories") 立即失效。
+ */
+export const getCachedCategoryNames = unstable_cache(
+  async () => listCategoryNames(),
+  ["category-names"],
+  { tags: ["categories"], revalidate: 60 },
+);

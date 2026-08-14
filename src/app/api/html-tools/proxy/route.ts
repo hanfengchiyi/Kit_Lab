@@ -1,6 +1,6 @@
-import dns from "node:dns/promises";
-import net from "node:net";
 import { NextResponse } from "next/server";
+import { checkRateLimit, clientIpFromHeaders } from "@/lib/rate-limit";
+import { allowPrivateTargets, isBlockedHost } from "@/lib/ssrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,11 +9,20 @@ export const dynamic = "force-dynamic";
  * 用户 HTML 工具的同源代理：浏览器里跨域请求会被 CORS 拦截，
  * 由服务端代为转发（服务器之间没有同源策略）。
  * 只转发请求体里声明的 URL/方法/头，绝不携带本站 Cookie。
+ *
+ * 安全设计：
+ * - 目标地址逐跳校验（含重定向），拒绝环回/私网/云元数据地址（SSRF 防护）；
+ * - 按 IP 限流，避免被当成开放转发跳板；
+ * - 沙箱模式（同源 opaque origin）下允许 Origin: null 的 CORS 请求。
  */
 
 const MAX_REQUEST_BODY_BYTES = 10 * 1024 * 1024;
 const MAX_RESPONSE_BODY_BYTES = 25 * 1024 * 1024;
 const UPSTREAM_TIMEOUT_MS = 30_000;
+const MAX_REDIRECTS = 3;
+/** 每 IP 每分钟最多 60 次代理请求 */
+const PROXY_RATE_LIMIT = 60;
+const PROXY_RATE_WINDOW_MS = 60_000;
 
 const ALLOWED_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
 
@@ -40,45 +49,22 @@ const STRIPPED_RESPONSE_HEADERS = new Set([
   "set-cookie",
 ]);
 
-function allowPrivateTargets(): boolean {
-  return process.env.HTML_TOOL_PROXY_ALLOW_PRIVATE === "true";
-}
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
-function isBlockedIp(ip: string): boolean {
-  if (net.isIPv4(ip)) {
-    const [a, b] = ip.split(".").map(Number);
-    return (
-      a === 0 || // 0.0.0.0/8 “本机”
-      a === 10 || // 私网
-      a === 127 || // 环回
-      (a === 169 && b === 254) || // 链路本地 / 云元数据
-      (a === 172 && b >= 16 && b <= 31) || // 私网
-      (a === 192 && b === 168) // 私网
-    );
+/** 沙箱 HTML 工具页（opaque origin）通过 CORS 使用本代理时的响应头 */
+function corsHeadersFor(request: Request): Record<string, string> {
+  const origin = request.headers.get("origin");
+  // 仅放行 opaque origin（沙箱页面）；普通第三方站点拿不到匹配的 ACAO 头
+  if (origin === "null") {
+    return {
+      "Access-Control-Allow-Origin": "null",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Max-Age": "86400",
+      Vary: "Origin",
+    };
   }
-  if (net.isIPv6(ip)) {
-    const normalized = ip.toLowerCase();
-    if (normalized === "::" || normalized === "::1") return true;
-    if (normalized.startsWith("fe80:")) return true; // 链路本地
-    if (normalized.startsWith("::ffff:")) return isBlockedIp(normalized.slice(7));
-    return false;
-  }
-  return false;
-}
-
-/** 目标主机是否命中环回/私网/元数据等禁区（含 DNS 解析结果，挡住明显的外壳域名）。 */
-async function isBlockedHost(hostname: string): Promise<boolean> {
-  const lower = hostname.toLowerCase();
-  if (lower === "localhost" || lower.endsWith(".localhost")) return true;
-  if (net.isIP(lower)) return isBlockedIp(lower);
-  try {
-    const records = await dns.lookup(lower, { all: true, verbatim: true });
-    if (records.length === 0) return true;
-    return records.some((record) => isBlockedIp(record.address));
-  } catch {
-    // DNS 解析失败的目标没有转发价值，一律拒绝。
-    return true;
-  }
+  return { Vary: "Origin" };
 }
 
 function errorResponse(status: number, message: string) {
@@ -158,31 +144,100 @@ async function parsePayload(request: Request): Promise<ProxyPayload | NextRespon
   return { url: target.toString(), method: upperMethod, headers: forwardHeaders, body: bodyBuffer };
 }
 
-export async function POST(request: Request) {
-  const parsed = await parsePayload(request);
-  if (parsed instanceof NextResponse) return parsed;
+/**
+ * 带逐跳 SSRF 校验的转发：手动跟随重定向，每一跳都重新检查目标地址，
+ * 防止「公网域名 → 302 到 127.0.0.1/云元数据」的绕过。
+ */
+async function fetchWithRedirectValidation(
+  initialUrl: string,
+  method: string,
+  headers: Record<string, string>,
+  body: Uint8Array | null,
+): Promise<Response> {
+  let current = initialUrl;
 
-  if (!allowPrivateTargets()) {
-    const host = new URL(parsed.url).hostname;
-    if (await isBlockedHost(host)) {
-      return errorResponse(403, "代理不允许访问环回/私网/元数据地址");
+  for (let hop = 0; ; hop++) {
+    if (hop > MAX_REDIRECTS) {
+      throw new Error("重定向次数过多");
     }
+    const host = new URL(current).hostname;
+    if (!allowPrivateTargets() && (await isBlockedHost(host))) {
+      throw new Error("重定向目标为环回/私网/元数据地址");
+    }
+
+    const response = await fetch(current, {
+      method,
+      headers,
+      body: body ? Buffer.from(body) : null,
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+      redirect: "manual",
+    });
+
+    if (!REDIRECT_STATUSES.has(response.status)) {
+      return response;
+    }
+
+    const location = response.headers.get("location");
+    // 不读取重定向响应体，直接断开连接
+    await response.body?.cancel().catch(() => {});
+    if (!location) {
+      return response;
+    }
+    let next: URL;
+    try {
+      next = new URL(location, current);
+    } catch {
+      throw new Error("重定向目标不合法");
+    }
+    if (next.protocol !== "http:" && next.protocol !== "https:") {
+      throw new Error("重定向目标协议不支持");
+    }
+    current = next.toString();
+  }
+}
+
+export async function POST(request: Request) {
+  const ip = clientIpFromHeaders(request.headers);
+  const limited = checkRateLimit(`proxy:${ip}`, PROXY_RATE_LIMIT, PROXY_RATE_WINDOW_MS);
+  if (!limited.allowed) {
+    return NextResponse.json(
+      { error: "请求过于频繁，请稍后再试" },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(limited.retryAfterSec ?? 60),
+          ...corsHeadersFor(request),
+        },
+      },
+    );
+  }
+
+  const parsed = await parsePayload(request);
+  if (parsed instanceof NextResponse) {
+    const response = parsed;
+    for (const [key, value] of Object.entries(corsHeadersFor(request))) {
+      response.headers.set(key, value);
+    }
+    return response;
   }
 
   let upstream: Response;
   try {
-    upstream = await fetch(parsed.url, {
-      method: parsed.method,
-      headers: parsed.headers,
-      body: parsed.method === "GET" || parsed.method === "HEAD" || parsed.body === null
+    upstream = await fetchWithRedirectValidation(
+      parsed.url,
+      parsed.method,
+      parsed.headers,
+      parsed.method === "GET" || parsed.method === "HEAD" || parsed.body === null
         ? null
         : new Uint8Array(parsed.body),
-      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-      redirect: "follow",
-    });
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "目标服务器不可达";
-    return errorResponse(502, `无法连接目标服务器：${message}`);
+    const response = errorResponse(502, `无法连接目标服务器：${message}`);
+    for (const [key, value] of Object.entries(corsHeadersFor(request))) {
+      response.headers.set(key, value);
+    }
+    return response;
   }
 
   // 手动读取响应流，超限即断开，避免代理被当成大文件中转。
@@ -213,14 +268,29 @@ export async function POST(request: Request) {
     }
   });
 
-  return NextResponse.json({
-    status: upstream.status,
-    statusText: upstream.statusText,
-    headers: responseHeaders,
-    bodyBase64: Buffer.concat(chunks).toString("base64"),
+  return NextResponse.json(
+    {
+      status: upstream.status,
+      statusText: upstream.statusText,
+      headers: responseHeaders,
+      bodyBase64: Buffer.concat(chunks).toString("base64"),
+    },
+    { headers: corsHeadersFor(request) },
+  );
+}
+
+/** 沙箱 HTML 工具（opaque origin）发起的 preflight 预检请求 */
+export function OPTIONS(request: Request) {
+  return new NextResponse(null, {
+    status: 204,
+    headers: corsHeadersFor(request),
   });
 }
 
-export function GET() {
-  return errorResponse(405, "仅支持 POST");
+export function GET(request: Request) {
+  const response = errorResponse(405, "仅支持 POST");
+  for (const [key, value] of Object.entries(corsHeadersFor(request))) {
+    response.headers.set(key, value);
+  }
+  return response;
 }

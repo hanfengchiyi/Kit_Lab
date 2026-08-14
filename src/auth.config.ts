@@ -1,4 +1,5 @@
 import type { NextAuthConfig } from "next-auth";
+import type { UserRole } from "@/lib/tool-schema";
 
 /**
  * 可被中间件（Edge Runtime）安全使用的 Auth.js 配置：
@@ -24,7 +25,7 @@ export const authConfig = {
         token.id = user.id;
       }
       if (user?.role) {
-        token.role = user.role;
+        token.role = (user.role === "admin" ? "admin" : "user") as UserRole;
       }
       return token;
     },
@@ -33,7 +34,8 @@ export const authConfig = {
         session.user.id = token.id;
       }
       if (typeof token.role === "string") {
-        session.user.role = token.role;
+        // token.role 来自 jwt 回调；收窄为已知角色
+        session.user.role = token.role as UserRole;
       }
       return session;
     },

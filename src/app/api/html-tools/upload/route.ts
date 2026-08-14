@@ -3,31 +3,29 @@ import { mkdir, open } from "node:fs/promises";
 import path from "node:path";
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { auth } from "@/auth";
 import {
   createHtmlToolStagingDir,
   finalizeHtmlToolDirectory,
   HTML_TOOL_QUOTA_BYTES,
+  PackageRejectedError,
   prepareHtmlToolPackage,
   removeHtmlToolDirectory,
   removeUploadStaging,
 } from "@/lib/html-tools";
 import { listCategoryNames } from "@/lib/categories";
+import { normalizeTags } from "@/lib/constants";
+import { checkRateLimit, clientIpFromHeaders } from "@/lib/rate-limit";
+import { uploadMetadataSchema } from "@/lib/tool-schema";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const metadataSchema = z.object({
-  name: z.string().trim().min(1, "请填写名称").max(50, "名称最长 50 字"),
-  description: z.string().trim().min(1, "请填写描述").max(200, "描述最长 200 字"),
-  category: z.string().trim().min(1, "请选择分类").max(20, "分类名过长"),
-  tags: z.string().trim().max(100, "标签总长最长 100 字").default(""),
-  icon: z.string().trim().max(8, "图标最多 8 个字符").default(""),
-  order: z.number().int("排序需为整数").default(0),
-});
+/** 每 IP 每小时最多 10 次 HTML 上传（上传体量大、落盘重） */
+const UPLOAD_RATE_LIMIT = 10;
+const UPLOAD_RATE_WINDOW_MS = 60 * 60 * 1000;
 
 class UploadError extends Error {
   constructor(
@@ -36,14 +34,6 @@ class UploadError extends Error {
   ) {
     super(message);
   }
-}
-
-function normalizeTags(tags: string): string {
-  return tags
-    .split(/[,，]/)
-    .map((tag) => tag.trim())
-    .filter(Boolean)
-    .join(",");
 }
 
 function readEncodedHeader(request: Request, name: string): string {
@@ -98,6 +88,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
   }
 
+  const ip = clientIpFromHeaders(request.headers);
+  const limited = checkRateLimit(`upload:${ip}`, UPLOAD_RATE_LIMIT, UPLOAD_RATE_WINDOW_MS);
+  if (!limited.allowed) {
+    return NextResponse.json(
+      { error: "上传过于频繁，请稍后再试" },
+      {
+        status: 429,
+        headers: { "Retry-After": String(limited.retryAfterSec ?? 3600) },
+      },
+    );
+  }
+
   let stagingDirectory: string | null = null;
   let finalized = false;
   let committed = false;
@@ -117,9 +119,15 @@ export async function POST(request: Request) {
       if (error instanceof UploadError) throw error;
       throw new UploadError("工具信息格式错误");
     }
-    const parsed = metadataSchema.safeParse(rawMetadata);
+    const parsed = uploadMetadataSchema.safeParse(rawMetadata);
     if (!parsed.success) {
       throw new UploadError(parsed.error.issues[0]?.message || "工具信息不完整");
+    }
+
+    // 分类必须在当前分组清单内（与保存表单行为一致，不做静默降级）
+    const knownCategories = new Set(await listCategoryNames());
+    if (!knownCategories.has(parsed.data.category)) {
+      throw new UploadError("请选择有效的分类");
     }
 
     const user = await prisma.user.findUnique({
@@ -176,9 +184,7 @@ export async function POST(request: Request) {
           name: parsed.data.name,
           url: relativeUrl,
           description: parsed.data.description,
-          category: (await listCategoryNames()).includes(parsed.data.category)
-            ? parsed.data.category
-            : "其他",
+          category: parsed.data.category,
           tags: normalizeTags(parsed.data.tags),
           source: "self",
           icon: parsed.data.icon || null,
@@ -212,6 +218,10 @@ export async function POST(request: Request) {
   } catch (error) {
     if (finalized && !committed && toolId) {
       await removeHtmlToolDirectory(session.user.id, toolId).catch(console.error);
+    }
+    if (error instanceof PackageRejectedError) {
+      // 包内容不合规（路径/软链/超限/无入口）→ 4xx 回显友好文案
+      return NextResponse.json({ error: error.message }, { status: error.status });
     }
     const message = error instanceof Error ? error.message : "上传失败，请稍后重试";
     const status = error instanceof UploadError ? error.status : 500;

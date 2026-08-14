@@ -42,6 +42,9 @@ model Tool {
   htmlEntry       String?
   htmlBytes       Int        @default(0)
   htmlAccessToken String?    @unique
+
+  @@index([category, visibility])
+  @@index([ownerId])
 }
 
 model Favorite {
@@ -52,6 +55,7 @@ model Favorite {
   createdAt DateTime @default(now())
 
   @@id([userId, toolId])
+  @@index([toolId])
 }
 
 // 公告与用户守则（管理员维护；kind 区分类型）

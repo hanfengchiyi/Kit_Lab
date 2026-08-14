@@ -3,7 +3,6 @@ import { Readable } from "node:stream";
 import { NextResponse } from "next/server";
 import {
   contentTypeFor,
-  isRegularFile,
   requestUsesDedicatedHtmlOrigin,
   resolveHtmlToolAsset,
   streamFile,
@@ -39,15 +38,22 @@ export async function GET(
 
   const tool = await prisma.tool.findUnique({
     where: { htmlAccessToken: token },
-    select: { id: true, ownerId: true, kind: true, category: true },
+    select: { id: true, ownerId: true, kind: true, category: true, visibility: true },
   });
   if (!tool || tool.kind !== "html" || !tool.ownerId) {
     return new NextResponse("Not found", { status: 404 });
   }
 
-  // 分类授权：受限用户无权使用该分类时，即使拿到内容地址也拒绝访问（工具属主与管理员除外）
   const session = await auth();
-  if (session?.user?.id !== tool.ownerId) {
+  const isOwner = session?.user?.id === tool.ownerId;
+  const isAdmin = session?.user?.role === "admin";
+
+  if (!isOwner && !isAdmin) {
+    // 私有 / 已下架条目只有属主与管理员的地址有效；token 泄露不应暴露内容。
+    if (tool.visibility !== "public") {
+      return new NextResponse("Not found", { status: 404 });
+    }
+    // 分类授权：受限用户无权使用该分类时，即使拿到内容地址也拒绝访问
     const allowed = await getAllowedCategories(session?.user);
     if (!categoryAllowed(allowed, tool.category)) {
       return new NextResponse("Forbidden", { status: 403 });
@@ -55,11 +61,20 @@ export async function GET(
   }
 
   const filePath = resolveHtmlToolAsset(tool.ownerId, tool.id, pathSegments);
-  if (!filePath || !(await isRegularFile(filePath))) {
+  if (!filePath) {
+    return new NextResponse("Not found", { status: 404 });
+  }
+  // 单次 stat：文件不存在与不是普通文件都按 404 处理
+  let fileStat;
+  try {
+    fileStat = await stat(filePath);
+  } catch {
+    return new NextResponse("Not found", { status: 404 });
+  }
+  if (!fileStat.isFile()) {
     return new NextResponse("Not found", { status: 404 });
   }
 
-  const fileStat = await stat(filePath);
   const contentType = contentTypeFor(filePath);
   const requestHost =
     request.headers.get("x-forwarded-host") || request.headers.get("host");
