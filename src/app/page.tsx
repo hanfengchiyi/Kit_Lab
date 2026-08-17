@@ -14,9 +14,20 @@ export const metadata: Metadata = {
 export default async function HomePage() {
   const session = await auth();
 
+  // 只取列表展示所需的列，避免把 htmlEntry / 审批字段等一并拉出
   const tools = await prisma.tool.findMany({
     where: { visibility: "public" },
     orderBy: [{ order: "asc" }, { addedAt: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      url: true,
+      description: true,
+      category: true,
+      tags: true,
+      source: true,
+      icon: true,
+    },
   });
 
   // 分类授权：受限用户只看到被授权的分类

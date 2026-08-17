@@ -5,6 +5,8 @@
  * 注意：片段内不能使用模板字符串/反引号，避免与本文件的字符串字面量冲突。
  */
 
+import { readFile } from "node:fs/promises";
+
 /** 注入标记：工具页面已包含该标记时跳过注入，防止重复包装。 */
 export const HTML_TOOL_PROXY_MARKER = "__kitLabProxy";
 
@@ -417,4 +419,60 @@ export function injectProxySnippet(html: string): string {
     }
   }
   return HTML_TOOL_PROXY_SNIPPET + html;
+}
+
+/* ================= 注入结果缓存 ================= */
+
+interface InjectedCacheEntry {
+  size: number;
+  mtimeMs: number;
+  html: string;
+  bytes: number;
+}
+
+/**
+ * 注入结果内存缓存：键为文件路径，命中条件是「大小 + mtime」完全一致。
+ * 工具内容通过原子 rename 替换，路径不变时 mtime 必然变化，不会读到旧内容。
+ * 单进程部署适用（与 rate-limit 同假设）；多实例各自缓存，行为一致只是多算几次。
+ */
+const injectedCache = new Map<string, InjectedCacheEntry>();
+let injectedCacheBytes = 0;
+const INJECTED_CACHE_MAX_ENTRIES = 32;
+const INJECTED_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+
+/**
+ * 读取 HTML 文件并注入代理补丁，带缓存。
+ * @param size 调用方 stat 得到的文件大小（与 mtimeMs 一起作为缓存有效性校验）
+ */
+export async function getInjectedHtml(
+  filePath: string,
+  size: number,
+  mtimeMs: number,
+): Promise<string> {
+  const cached = injectedCache.get(filePath);
+  if (cached && cached.size === size && cached.mtimeMs === mtimeMs) {
+    return cached.html;
+  }
+
+  const html = injectProxySnippet((await readFile(filePath)).toString("utf8"));
+  const bytes = Buffer.byteLength(html);
+
+  // 单文件超过缓存额度一半就不缓存，避免一个大文件挤掉全部条目
+  if (bytes <= INJECTED_CACHE_MAX_BYTES / 2) {
+    if (cached) injectedCacheBytes -= cached.bytes;
+    injectedCache.set(filePath, { size, mtimeMs, html, bytes });
+    injectedCacheBytes += bytes;
+    // 按插入顺序逐出最旧条目，直到回到条目数与总字节双重上限内
+    while (
+      injectedCache.size > INJECTED_CACHE_MAX_ENTRIES ||
+      injectedCacheBytes > INJECTED_CACHE_MAX_BYTES
+    ) {
+      const oldest = injectedCache.keys().next().value;
+      if (oldest === undefined || oldest === filePath) break;
+      const evicted = injectedCache.get(oldest);
+      if (evicted) injectedCacheBytes -= evicted.bytes;
+      injectedCache.delete(oldest);
+    }
+  }
+  return html;
 }

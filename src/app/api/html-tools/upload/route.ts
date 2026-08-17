@@ -24,6 +24,7 @@ import { listCategoryNames } from "@/lib/categories";
 import { normalizeTags } from "@/lib/constants";
 import { checkRateLimit, clientIpFromHeaders } from "@/lib/rate-limit";
 import { uploadMetadataSchema } from "@/lib/tool-schema";
+import { invalidateHtmlToolContentAccess } from "@/lib/html-tool-access";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -369,6 +370,7 @@ export async function POST(request: Request) {
       revalidatePath("/my");
       revalidatePath("/admin");
       revalidatePath("/");
+      invalidateHtmlToolContentAccess();
     } catch (error) {
       // 上传已经持久化成功，缓存刷新失败不应诱导用户重复上传。
       console.error("HTML 工具页面缓存刷新失败：", error);

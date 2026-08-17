@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { listCategoryNames } from "@/lib/categories";
 import { getSetting, setSetting } from "@/lib/settings";
 import { promoteDraftForTool } from "@/lib/html-update";
+import { invalidateHtmlToolContentAccess } from "@/lib/html-tool-access";
 
 /** 校验当前会话是管理员，否则抛错（服务端二次校验，页面层另有重定向） */
 async function requireAdmin() {
@@ -96,6 +97,7 @@ export async function reviewPublish(toolId: string, formData: FormData): Promise
       where: { id: toolId },
       data: { visibility: "public", publishStatus: "approved", publishNote: note || null },
     });
+    invalidateHtmlToolContentAccess();
   } else {
     await prisma.tool.update({
       where: { id: toolId },
@@ -118,6 +120,7 @@ export async function reviewHtmlUpdate(toolId: string, formData: FormData): Prom
   if (tool.htmlUpdateStatus !== "pending" || !tool.htmlDraftEntry || tool.htmlDraftBytes <= 0) return;
   if (approve) {
     await promoteDraftForTool(tool);
+    invalidateHtmlToolContentAccess();
   } else {
     await prisma.tool.update({
       where: { id: toolId },
@@ -139,6 +142,7 @@ export async function adminPushToPublic(toolId: string): Promise<void> {
     where: { id: toolId },
     data: { visibility: "public", publishStatus: "approved" },
   });
+  invalidateHtmlToolContentAccess();
   revalidatePath("/");
   revalidatePath("/my");
   revalidatePath("/admin");
@@ -158,6 +162,7 @@ export async function adminUnpublish(toolId: string): Promise<void> {
     where: { id: toolId },
     data: { visibility: "private", publishStatus: "none" },
   });
+  invalidateHtmlToolContentAccess();
   revalidatePath("/");
   revalidatePath("/my");
   revalidatePath("/admin");
@@ -172,6 +177,7 @@ export async function adminRepublish(toolId: string): Promise<void> {
     where: { id: toolId },
     data: { visibility: "public" },
   });
+  invalidateHtmlToolContentAccess();
   revalidatePath("/");
   revalidatePath("/admin");
 }
@@ -191,6 +197,7 @@ export async function setCategoryGrants(userId: string, granted: string[]): Prom
       prisma.categoryGrant.create({ data: { userId, category } }),
     ),
   ]);
+  revalidateTag("category-grants");
   revalidatePath("/admin/grants");
   revalidatePath("/");
 }
@@ -254,6 +261,8 @@ export async function deleteCategory(name: string): Promise<{ error?: string }> 
   revalidatePath("/");
   revalidatePath("/admin/categories");
   revalidateTag("categories");
+  // 授权记录被一并清理，个人授权缓存同步失效
+  revalidateTag("category-grants");
   return {};
 }
 

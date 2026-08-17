@@ -12,6 +12,7 @@ import {
   stageHtmlToolDeletionWithDraft,
   type StagedHtmlToolDeletion,
 } from "@/lib/html-tools";
+import { invalidateHtmlToolContentAccess } from "@/lib/html-tool-access";
 import { generateToolIcon } from "@/lib/icon-gen";
 import { toolSchema } from "@/lib/tool-schema";
 
@@ -108,6 +109,8 @@ export async function saveTool(
     await prisma.tool.create({ data: values });
   }
 
+  // 分类 / 可见性 / 属主可能变化，影响内容分发路由的缓存视图
+  invalidateHtmlToolContentAccess();
   revalidatePath("/");
   revalidatePath("/my");
   revalidatePath("/admin");
@@ -178,6 +181,8 @@ export async function deleteTool(id: string): Promise<void> {
     console.error(`HTML 工具暂存目录清理失败（${existing.id}）：`, error);
   });
 
+  // 条目已删除 / 可见性可能变化，内容分发缓存立即失效
+  invalidateHtmlToolContentAccess();
   revalidatePath("/");
   revalidatePath("/my");
   revalidatePath("/admin");
@@ -203,6 +208,7 @@ export async function requestPublish(id: string): Promise<{ error?: string }> {
       where: { id },
       data: { visibility: "public", publishStatus: "approved", publishNote: null },
     });
+    invalidateHtmlToolContentAccess();
     revalidatePath("/");
     revalidatePath("/admin");
   } else {

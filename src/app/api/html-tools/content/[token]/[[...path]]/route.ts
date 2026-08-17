@@ -1,4 +1,4 @@
-import { readFile, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { NextResponse } from "next/server";
 import {
@@ -9,10 +9,10 @@ import {
   resolveExistingHtmlToolAsset,
   streamFile,
 } from "@/lib/html-tools";
-import { injectProxySnippet } from "@/lib/html-tool-proxy";
+import { getInjectedHtml } from "@/lib/html-tool-proxy";
+import { getCachedHtmlToolContentAccess } from "@/lib/html-tool-access";
 import { categoryAllowed, getAllowedCategories } from "@/lib/grants";
 import { auth } from "@/auth";
-import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,19 +38,8 @@ export async function GET(
     return new NextResponse("Not found", { status: 404 });
   }
 
-  const tool = await prisma.tool.findUnique({
-    where: { htmlAccessToken: token },
-    select: {
-      id: true,
-      ownerId: true,
-      kind: true,
-      category: true,
-      visibility: true,
-      htmlEntry: true,
-      htmlDraftEntry: true,
-      htmlDraftBytes: true,
-    },
-  });
+  // 走 60s 缓存（tag 失效兜底）：工具页一次加载几十个静态资源，避免每个请求都打库
+  const tool = await getCachedHtmlToolContentAccess(token);
   if (!tool || tool.kind !== "html" || !tool.ownerId) {
     return new NextResponse("Not found", { status: 404 });
   }
@@ -120,7 +109,8 @@ export async function GET(
   const headers = new Headers({
     "Content-Type": contentType,
     "Content-Length": String(fileStat.size),
-    // 每次重新验证令牌，确保用户删除工具后旧地址立即失效。
+    // 浏览器侧不缓存：令牌有效性由服务端缓存（60s TTL + 写入即失效）保证，
+    // 删除/下架工具后最迟一个失效周期内旧地址即不可用于新会话。
     "Cache-Control": "private, no-store",
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
@@ -133,10 +123,11 @@ export async function GET(
   }
 
   // HTML 入口页注入跨域代理补丁，让工具里的 fetch/XHR 跨域请求改走本站服务端代理。
+  // 注入结果按「路径+大小+mtime」做内存缓存，避免每次访问重复读盘与注入。
   // 超大 HTML 维持流式返回、不注入。
   const MAX_INJECT_BYTES = 10 * 1024 * 1024;
   if (contentType.startsWith("text/html") && fileStat.size <= MAX_INJECT_BYTES) {
-    const html = injectProxySnippet((await readFile(filePath)).toString("utf8"));
+    const html = await getInjectedHtml(filePath, fileStat.size, fileStat.mtimeMs);
     headers.set("Content-Length", String(Buffer.byteLength(html)));
     return new NextResponse(html, { status: 200, headers });
   }
