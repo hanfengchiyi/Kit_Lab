@@ -42,6 +42,12 @@ model Tool {
   htmlEntry       String?
   htmlBytes       Int        @default(0)
   htmlAccessToken String?    @unique
+  // 公开 HTML 工具的创作者草稿：属主替换内容只影响草稿，自己立即可用；
+  // 申请更新后由管理员审批，通过时草稿晋升为公开版（htmlEntry/htmlBytes 随之更新）
+  htmlDraftEntry  String?
+  htmlDraftBytes  Int        @default(0)
+  htmlUpdateStatus String    @default("none") // "none" | "pending" | "rejected"
+  htmlUpdateNote  String?
 
   @@index([category, visibility])
   @@index([ownerId])

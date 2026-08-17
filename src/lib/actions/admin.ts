@@ -7,6 +7,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { listCategoryNames } from "@/lib/categories";
 import { getSetting, setSetting } from "@/lib/settings";
+import { promoteDraftForTool } from "@/lib/html-update";
 
 /** 校验当前会话是管理员，否则抛错（服务端二次校验，页面层另有重定向） */
 async function requireAdmin() {
@@ -83,7 +84,7 @@ export async function deleteAnnouncement(id: string): Promise<void> {
 
 /* ================= 推送公开审批 ================= */
 
-/** 审批用户提交的推送申请（表单：decision=approve|reject，note 可选） */
+/** 审批用户的推送申请（表单：decision=approve|reject，note 可选） */
 export async function reviewPublish(toolId: string, formData: FormData): Promise<void> {
   await requireAdmin();
   const approve = formData.get("decision") === "approve";
@@ -99,6 +100,28 @@ export async function reviewPublish(toolId: string, formData: FormData): Promise
     await prisma.tool.update({
       where: { id: toolId },
       data: { publishStatus: "rejected", publishNote: note || null },
+    });
+  }
+  revalidatePath("/");
+  revalidatePath("/my");
+  revalidatePath("/admin");
+  revalidatePath("/admin/publish");
+}
+
+/** 审批属主的「更新公开版本」申请（表单：decision=approve|reject，note 可选） */
+export async function reviewHtmlUpdate(toolId: string, formData: FormData): Promise<void> {
+  await requireAdmin();
+  const approve = formData.get("decision") === "approve";
+  const note = String(formData.get("note") ?? "").trim().slice(0, 200);
+  const tool = await prisma.tool.findUnique({ where: { id: toolId } });
+  if (!tool || tool.visibility !== "public" || tool.kind !== "html" || !tool.ownerId) return;
+  if (tool.htmlUpdateStatus !== "pending" || !tool.htmlDraftEntry || tool.htmlDraftBytes <= 0) return;
+  if (approve) {
+    await promoteDraftForTool(tool);
+  } else {
+    await prisma.tool.update({
+      where: { id: toolId },
+      data: { htmlUpdateStatus: "rejected", htmlUpdateNote: note || null },
     });
   }
   revalidatePath("/");
@@ -127,6 +150,10 @@ export async function adminUnpublish(toolId: string): Promise<void> {
   await requireAdmin();
   const tool = await prisma.tool.findUnique({ where: { id: toolId } });
   if (!tool || tool.visibility !== "public") return;
+  // 公开 HTML 工具存在草稿时先晋升：属主最新版成为私有内容，避免丢失草稿工作
+  if (tool.kind === "html" && tool.ownerId && tool.htmlDraftEntry && tool.htmlDraftBytes > 0) {
+    await promoteDraftForTool(tool);
+  }
   await prisma.tool.update({
     where: { id: toolId },
     data: { visibility: "private", publishStatus: "none" },

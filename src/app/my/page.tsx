@@ -15,10 +15,14 @@ export const metadata: Metadata = {
 export default async function MyToolsPage() {
   const user = await requireUserPage();
 
-  const [tools, dbUser] = await Promise.all([
+  const [tools, publicTools, dbUser] = await Promise.all([
     prisma.tool.findMany({
       where: { ownerId: user.id, visibility: "private" },
       orderBy: [{ order: "asc" }, { addedAt: "desc" }],
+    }),
+    prisma.tool.findMany({
+      where: { ownerId: user.id, visibility: "public" },
+      orderBy: { addedAt: "desc" },
     }),
     prisma.user.findUnique({
       where: { id: user.id },
@@ -112,6 +116,73 @@ export default async function MyToolsPage() {
             />
           ))}
         </div>
+      )}
+
+      {publicTools.length > 0 && (
+        <section className="mt-10" aria-labelledby="public-tools-title">
+          <h2 id="public-tools-title" className="mb-3 font-display text-lg text-ink">
+            已公开的工具 <span className="text-sm text-ink/40">（{publicTools.length}）</span>
+          </h2>
+          <p className="mb-3 text-sm text-ink/45">
+            公开后属主仍可替换 HTML：新内容立即成为你自己的草稿版，公开访客继续使用已审批的版本，申请通过后所有人更新。
+          </p>
+          <div className="space-y-2.5">
+            {publicTools.map((tool) => (
+              <div
+                key={tool.id}
+                className="flex flex-wrap items-center gap-2.5 rounded-2xl border-2 border-emerald-100 bg-emerald-50/40 px-4 py-3"
+              >
+                <span className="font-bold text-ink">{tool.name}</span>
+                <span className="rounded-full bg-lav-50 px-2.5 py-0.5 text-xs text-lav-500">
+                  {tool.category}
+                </span>
+                {tool.kind === "html" && (
+                  <>
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-600">
+                      HTML · {formatBytes(tool.htmlBytes)}
+                    </span>
+                    {tool.htmlDraftBytes > 0 && (
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-bold ${
+                          tool.htmlUpdateStatus === "pending"
+                            ? "bg-amber-100 text-amber-600"
+                            : tool.htmlUpdateStatus === "rejected"
+                              ? "bg-red-50 text-red-500"
+                              : "bg-skyblue-50 text-skyblue-500"
+                        }`}
+                        title={tool.htmlUpdateNote ?? undefined}
+                      >
+                        {tool.htmlUpdateStatus === "pending"
+                          ? "更新待审批"
+                          : tool.htmlUpdateStatus === "rejected"
+                            ? "更新被拒"
+                            : "有新版待申请"}
+                      </span>
+                    )}
+                  </>
+                )}
+                <span className="ml-auto flex items-center gap-3">
+                  {tool.kind === "html" && (
+                    <Link
+                      href={`/my/${tool.id}/update`}
+                      className="text-sm font-bold text-skyblue-500 transition-colors hover:text-skyblue-600"
+                    >
+                      更新内容
+                    </Link>
+                  )}
+                  <a
+                    href={getToolHref(tool)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sm font-bold text-sakura-400 transition-colors hover:text-sakura-500"
+                  >
+                    打开
+                  </a>
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
     </div>
   );

@@ -62,6 +62,11 @@ export function htmlToolDirectory(ownerId: string, toolId: string): string {
   return path.join(storageRoot(), ownerId, toolId);
 }
 
+/** 公开 HTML 工具的创作者草稿目录（与正式目录同盘，保证原子 rename） */
+export function htmlToolDraftDirectory(ownerId: string, toolId: string): string {
+  return `${htmlToolDirectory(ownerId, toolId)}-draft`;
+}
+
 export async function finalizeHtmlToolDirectory(
   preparedDirectory: string,
   ownerId: string,
@@ -75,6 +80,10 @@ export async function finalizeHtmlToolDirectory(
 
 export async function removeHtmlToolDirectory(ownerId: string, toolId: string): Promise<void> {
   await rm(htmlToolDirectory(ownerId, toolId), { recursive: true, force: true });
+}
+
+export async function removeHtmlToolDraft(ownerId: string, toolId: string): Promise<void> {
+  await rm(htmlToolDraftDirectory(ownerId, toolId), { recursive: true, force: true });
 }
 
 /** 先把待删目录原子移出服务路径；数据库失败时仍可恢复。 */
@@ -125,9 +134,148 @@ export async function restoreStagedHtmlTool(
   ownerId: string,
   toolId: string,
 ): Promise<void> {
-  const target = htmlToolDirectory(ownerId, toolId);
+  await restoreStagedHtmlToolTo(stagedDirectory, htmlToolDirectory(ownerId, toolId));
+}
+
+/** 把回收站目录恢复到指定目标位置（正式目录或草稿目录通用） */
+export async function restoreStagedHtmlToolTo(
+  stagedDirectory: string,
+  target: string,
+): Promise<void> {
   await mkdir(path.dirname(target), { recursive: true });
   await rename(stagedDirectory, target);
+}
+
+export interface StagedHtmlToolDeletion {
+  /** 正式目录的回收站路径 */
+  live?: string;
+  /** 草稿目录的回收站路径 */
+  draft?: string;
+}
+
+/** 删除前暂存正式目录与草稿目录（各自可能不存在，缺失则跳过） */
+export async function stageHtmlToolDeletionWithDraft(
+  ownerId: string,
+  toolId: string,
+): Promise<StagedHtmlToolDeletion> {
+  const result: StagedHtmlToolDeletion = {};
+  const live = await stageHtmlToolDeletion(ownerId, toolId);
+  if (live) result.live = live;
+
+  const draft = htmlToolDraftDirectory(ownerId, toolId);
+  const trashRoot = path.join(storageRoot(), ".trash");
+  const stagedDraft = path.join(trashRoot, `draft-${toolId}-${randomUUID()}`);
+  await mkdir(trashRoot, { recursive: true });
+  try {
+    await rename(draft, stagedDraft);
+    result.draft = stagedDraft;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  return result;
+}
+
+/** 恢复暂存的正式目录与草稿目录（各回各位） */
+export async function restoreStagedHtmlToolDeletion(
+  staged: StagedHtmlToolDeletion,
+  ownerId: string,
+  toolId: string,
+): Promise<void> {
+  if (staged.live) {
+    await restoreStagedHtmlTool(staged.live, ownerId, toolId);
+  }
+  if (staged.draft) {
+    await restoreStagedHtmlToolTo(staged.draft, htmlToolDraftDirectory(ownerId, toolId));
+  }
+}
+
+/** 清除暂存的正式目录与草稿目录 */
+export async function purgeStagedHtmlToolDeletion(
+  staged: StagedHtmlToolDeletion,
+): Promise<void> {
+  const values = [staged.live, staged.draft].filter((v): v is string => Boolean(v));
+  await Promise.all(values.map((v) => rm(v, { recursive: true, force: true })));
+}
+
+/**
+ * 替换 HTML 工具内容：旧目录先原子移入回收站，新目录再原子就位。
+ * 返回回收站路径；旧目录不存在（并发替换 / 已被删除）时返回 null。
+ * 新目录就位失败时自动恢复旧目录。
+ */
+export async function replaceHtmlToolDirectory(
+  ownerId: string,
+  toolId: string,
+  preparedDirectory: string,
+): Promise<string | null> {
+  const staged = await stageHtmlToolDeletion(ownerId, toolId);
+  if (staged === null) return null;
+  try {
+    await finalizeHtmlToolDirectory(preparedDirectory, ownerId, toolId);
+  } catch (error) {
+    await restoreStagedHtmlTool(staged, ownerId, toolId).catch(() => {});
+    throw error;
+  }
+  return staged;
+}
+
+/** 替换公开工具的草稿目录：旧草稿（可能不存在）移入回收站，新内容原子就位 */
+export async function replaceHtmlToolDraft(
+  ownerId: string,
+  toolId: string,
+  preparedDirectory: string,
+): Promise<string | null> {
+  const target = htmlToolDraftDirectory(ownerId, toolId);
+  const trashRoot = path.join(storageRoot(), ".trash");
+  const staged = path.join(trashRoot, `draft-${toolId}-${randomUUID()}`);
+  await mkdir(trashRoot, { recursive: true });
+  let oldMoved = false;
+  try {
+    await rename(target, staged);
+    oldMoved = true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    // 首次创建草稿：无旧目录
+  }
+  try {
+    await mkdir(path.dirname(target), { recursive: true });
+    await rename(preparedDirectory, target);
+  } catch (error) {
+    if (oldMoved) {
+      await rename(staged, target).catch(() => {});
+    }
+    throw error;
+  }
+  return oldMoved ? staged : null;
+}
+
+/**
+ * 草稿晋升为正式（公开）版本：旧正式目录移入回收站，草稿目录原子就位。
+ * 返回回收站路径；正式目录不存在（并发变更 / 已被删除）时返回 null。
+ * 就位失败时自动恢复旧正式目录。
+ */
+export async function promoteHtmlDraftToLive(
+  ownerId: string,
+  toolId: string,
+): Promise<string | null> {
+  const staged = await stageHtmlToolDeletion(ownerId, toolId);
+  if (staged === null) return null;
+  const draft = htmlToolDraftDirectory(ownerId, toolId);
+  try {
+    await rename(draft, htmlToolDirectory(ownerId, toolId));
+  } catch (error) {
+    await restoreStagedHtmlTool(staged, ownerId, toolId).catch(() => {});
+    throw error;
+  }
+  return staged;
+}
+
+/** 草稿目录是否存在 */
+export async function htmlDraftExists(ownerId: string, toolId: string): Promise<boolean> {
+  try {
+    return (await stat(htmlToolDraftDirectory(ownerId, toolId))).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 export async function purgeStagedHtmlTool(stagedDirectory: string): Promise<void> {
@@ -383,11 +531,8 @@ export function requestUsesDedicatedHtmlOrigin(
   return actualHost.toLowerCase() === new URL(expected).host.toLowerCase();
 }
 
-export function resolveHtmlToolAsset(
-  ownerId: string,
-  toolId: string,
-  pathSegments: string[],
-): string | null {
+/** 在指定根目录内安全解析相对资源路径；越界或不合法返回 null */
+export function resolveHtmlToolAssetIn(root: string, pathSegments: string[]): string | null {
   if (pathSegments.length === 0) return null;
   const relative = pathSegments.join("/");
   let safeRelative: string;
@@ -396,9 +541,29 @@ export function resolveHtmlToolAsset(
   } catch {
     return null;
   }
-  const root = path.resolve(htmlToolDirectory(ownerId, toolId));
-  const target = path.resolve(root, ...safeRelative.split("/"));
-  return target.startsWith(`${root}${path.sep}`) ? target : null;
+  const resolvedRoot = path.resolve(root);
+  const target = path.resolve(resolvedRoot, ...safeRelative.split("/"));
+  return target.startsWith(`${resolvedRoot}${path.sep}`) ? target : null;
+}
+
+export function resolveHtmlToolAsset(
+  ownerId: string,
+  toolId: string,
+  pathSegments: string[],
+): string | null {
+  return resolveHtmlToolAssetIn(htmlToolDirectory(ownerId, toolId), pathSegments);
+}
+
+/** 在多个根目录中依次查找真实存在的资源文件（草稿优先、公开版兜底） */
+export async function resolveExistingHtmlToolAsset(
+  roots: string[],
+  pathSegments: string[],
+): Promise<string | null> {
+  for (const root of roots) {
+    const candidate = resolveHtmlToolAssetIn(root, pathSegments);
+    if (candidate && (await isRegularFile(candidate))) return candidate;
+  }
+  return null;
 }
 
 export async function isRegularFile(filePath: string): Promise<boolean> {

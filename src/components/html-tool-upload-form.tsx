@@ -13,10 +13,16 @@ export function HtmlToolUploadForm({
   remainingBytes,
   quotaBytes,
   categories,
+  replaceToolId,
+  maxBytes,
 }: {
   remainingBytes: number;
   quotaBytes: number;
   categories: string[];
+  /** 传入现有 HTML 工具 id 时进入替换模式：沿用展示信息与访问地址，仅更新内容 */
+  replaceToolId?: string;
+  /** 替换模式下的包体上限（默认 = remainingBytes）；通常为剩余额度 + 当前文件占用 */
+  maxBytes?: number;
 }) {
   const router = useRouter();
   const statusId = useId();
@@ -25,6 +31,9 @@ export function HtmlToolUploadForm({
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
 
+  const replaceMode = Boolean(replaceToolId);
+  const uploadLimit = replaceMode ? (maxBytes ?? remainingBytes) : remainingBytes;
+
   function upload(fileToUpload: File, metadata: Record<string, unknown>): Promise<void> {
     return new Promise((resolve, reject) => {
       const request = new XMLHttpRequest();
@@ -32,7 +41,11 @@ export function HtmlToolUploadForm({
       request.responseType = "json";
       request.setRequestHeader("Content-Type", "application/octet-stream");
       request.setRequestHeader("X-HTML-Tool-File-Name", encodeURIComponent(fileToUpload.name));
-      request.setRequestHeader("X-HTML-Tool-Metadata", encodeURIComponent(JSON.stringify(metadata)));
+      if (replaceToolId) {
+        request.setRequestHeader("X-HTML-Tool-Id", replaceToolId);
+      } else {
+        request.setRequestHeader("X-HTML-Tool-Metadata", encodeURIComponent(JSON.stringify(metadata)));
+      }
       request.upload.onprogress = (event) => {
         if (event.lengthComputable) setProgress(Math.round((event.loaded / event.total) * 100));
       };
@@ -56,20 +69,27 @@ export function HtmlToolUploadForm({
       setError("请选择一个 HTML 或 ZIP 文件");
       return;
     }
-    if (file.size > remainingBytes) {
-      setError(`文件超过剩余额度（还可使用 ${formatBytes(remainingBytes)}）`);
+    if (file.size > uploadLimit) {
+      setError(
+        replaceMode
+          ? `文件超过替换上限（${formatBytes(uploadLimit)}，即剩余额度 + 当前文件占用）`
+          : `文件超过剩余额度（还可使用 ${formatBytes(remainingBytes)}）`,
+      );
       return;
     }
 
-    const formData = new FormData(event.currentTarget);
-    const metadata = {
-      name: String(formData.get("name") || ""),
-      description: String(formData.get("description") || ""),
-      category: String(formData.get("category") || ""),
-      tags: String(formData.get("tags") || ""),
-      icon: String(formData.get("icon") || ""),
-      order: Number(formData.get("order") || 0),
-    };
+    let metadata: Record<string, unknown> = {};
+    if (!replaceMode) {
+      const formData = new FormData(event.currentTarget);
+      metadata = {
+        name: String(formData.get("name") || ""),
+        description: String(formData.get("description") || ""),
+        category: String(formData.get("category") || ""),
+        tags: String(formData.get("tags") || ""),
+        icon: String(formData.get("icon") || ""),
+        order: Number(formData.get("order") || 0),
+      };
+    }
 
     setPending(true);
     setProgress(0);
@@ -91,13 +111,27 @@ export function HtmlToolUploadForm({
       aria-describedby={statusId}
     >
       <div className="rounded-2xl border-2 border-skyblue-100 bg-skyblue-50/60 px-4 py-3 text-sm text-ink/60">
-        <p className="font-bold text-skyblue-600">可上传单个 HTML，或完整工具 ZIP</p>
-        <p className="mt-1 text-xs leading-relaxed">
-          ZIP 请包含根目录 index.html；也支持仅有一个 HTML 文件或单个子目录入口。CSS、JS、图片等相对路径资源会原样保留。
-        </p>
-        <p className="mt-2 text-xs font-bold">
-          剩余额度：{formatBytes(remainingBytes)} / {formatBytes(quotaBytes)}
-        </p>
+        {replaceMode ? (
+          <>
+            <p className="font-bold text-skyblue-600">替换 HTML 工具内容</p>
+            <p className="mt-1 text-xs leading-relaxed">
+              替换后访问地址保持不变、立即生效；名称、描述等展示信息沿用当前设置。旧文件占用的额度自动归还，新文件按解压后大小计费。
+            </p>
+            <p className="mt-2 text-xs font-bold">
+              本次替换上限：{formatBytes(uploadLimit)}（剩余额度 + 当前文件占用）
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="font-bold text-skyblue-600">可上传单个 HTML，或完整工具 ZIP</p>
+            <p className="mt-1 text-xs leading-relaxed">
+              ZIP 请包含根目录 index.html；也支持仅有一个 HTML 文件或单个子目录入口。CSS、JS、图片等相对路径资源会原样保留。
+            </p>
+            <p className="mt-2 text-xs font-bold">
+              剩余额度：{formatBytes(remainingBytes)} / {formatBytes(quotaBytes)}
+            </p>
+          </>
+        )}
       </div>
 
       {error && (
@@ -115,7 +149,7 @@ export function HtmlToolUploadForm({
           type="file"
           accept=".html,.htm,.zip,text/html,application/zip"
           required
-          disabled={pending || remainingBytes <= 0}
+          disabled={pending || uploadLimit <= 0}
           onChange={(event) => {
             const selected = event.target.files?.[0] || null;
             setFile(selected);
@@ -130,42 +164,46 @@ export function HtmlToolUploadForm({
         )}
       </div>
 
-      <div>
-        <label htmlFor="name" className={labelClass}>
-          名称 <span className="text-red-500">*</span>
-        </label>
-        <input id="name" name="name" required maxLength={50} className={inputClass} placeholder="例如：图片尺寸转换器" />
-      </div>
+      {!replaceMode && (
+        <>
+          <div>
+            <label htmlFor="name" className={labelClass}>
+              名称 <span className="text-red-500">*</span>
+            </label>
+            <input id="name" name="name" required maxLength={50} className={inputClass} placeholder="例如：图片尺寸转换器" />
+          </div>
 
-      <div>
-        <label htmlFor="description" className={labelClass}>
-          描述 <span className="text-red-500">*</span>
-        </label>
-        <textarea id="description" name="description" required maxLength={200} rows={2} className={inputClass} placeholder="一句话说明这个工具能做什么" />
-      </div>
+          <div>
+            <label htmlFor="description" className={labelClass}>
+              描述 <span className="text-red-500">*</span>
+            </label>
+            <textarea id="description" name="description" required maxLength={200} rows={2} className={inputClass} placeholder="一句话说明这个工具能做什么" />
+          </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <label htmlFor="category" className={labelClass}>
-            分类 <span className="text-red-500">*</span>
-          </label>
-          <select id="category" name="category" required defaultValue="" className={inputClass}>
-            <option value="" disabled>请选择分类</option>
-            {categories.map((category) => <option key={category}>{category}</option>)}
-          </select>
-        </div>
-        <div>
-          <label htmlFor="icon" className={labelClass}>图标（emoji，可选）</label>
-          <input id="icon" name="icon" maxLength={8} className={inputClass} placeholder="🧰" />
-        </div>
-      </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor="category" className={labelClass}>
+                分类 <span className="text-red-500">*</span>
+              </label>
+              <select id="category" name="category" required defaultValue="" className={inputClass}>
+                <option value="" disabled>请选择分类</option>
+                {categories.map((category) => <option key={category}>{category}</option>)}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="icon" className={labelClass}>图标（emoji，可选）</label>
+              <input id="icon" name="icon" maxLength={8} className={inputClass} placeholder="🧰" />
+            </div>
+          </div>
 
-      <div>
-        <label htmlFor="tags" className={labelClass}>标签</label>
-        <input id="tags" name="tags" maxLength={100} className={inputClass} placeholder="逗号分隔，如：图片,转换,离线" />
-      </div>
+          <div>
+            <label htmlFor="tags" className={labelClass}>标签</label>
+            <input id="tags" name="tags" maxLength={100} className={inputClass} placeholder="逗号分隔，如：图片,转换,离线" />
+          </div>
 
-      <input type="hidden" name="order" value="0" />
+          <input type="hidden" name="order" value="0" />
+        </>
+      )}
 
       {pending && (
         <div id={statusId} role="status" aria-live="polite">
@@ -182,10 +220,10 @@ export function HtmlToolUploadForm({
       <div className="flex items-center gap-3 pt-2">
         <button
           type="submit"
-          disabled={pending || remainingBytes <= 0}
+          disabled={pending || uploadLimit <= 0}
           className="rounded-xl bg-gradient-to-r from-sakura-400 to-sakura-500 px-5 py-2.5 text-sm font-bold text-white shadow-soft transition-all hover:shadow-pop active:scale-95 disabled:opacity-50"
         >
-          {pending ? "上传中…" : "上传并添加"}
+          {pending ? "替换中…" : replaceMode ? "替换并保存" : "上传并添加"}
         </button>
         <Link href="/my" className="text-sm font-bold text-ink/40 transition-colors hover:text-sakura-500">取消</Link>
       </div>

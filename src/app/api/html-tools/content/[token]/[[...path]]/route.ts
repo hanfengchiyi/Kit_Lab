@@ -3,8 +3,10 @@ import { Readable } from "node:stream";
 import { NextResponse } from "next/server";
 import {
   contentTypeFor,
+  htmlToolDraftDirectory,
+  htmlToolDirectory,
   requestUsesDedicatedHtmlOrigin,
-  resolveHtmlToolAsset,
+  resolveExistingHtmlToolAsset,
   streamFile,
 } from "@/lib/html-tools";
 import { injectProxySnippet } from "@/lib/html-tool-proxy";
@@ -38,7 +40,16 @@ export async function GET(
 
   const tool = await prisma.tool.findUnique({
     where: { htmlAccessToken: token },
-    select: { id: true, ownerId: true, kind: true, category: true, visibility: true },
+    select: {
+      id: true,
+      ownerId: true,
+      kind: true,
+      category: true,
+      visibility: true,
+      htmlEntry: true,
+      htmlDraftEntry: true,
+      htmlDraftBytes: true,
+    },
   });
   if (!tool || tool.kind !== "html" || !tool.ownerId) {
     return new NextResponse("Not found", { status: 404 });
@@ -60,7 +71,34 @@ export async function GET(
     }
   }
 
-  const filePath = resolveHtmlToolAsset(tool.ownerId, tool.id, pathSegments);
+  // 版本分发：属主/管理员可见草稿（创作者最新版），其他人只见已审批的公开版。
+  // 草稿文件缺失时回退到公开版，避免旧资源引用 404。
+  const viewer = isOwner || isAdmin;
+  const hasDraft = viewer && !!tool.htmlDraftEntry && tool.htmlDraftBytes > 0;
+
+  if (hasDraft && tool.htmlDraftEntry) {
+    // 属主从旧入口地址（公开版入口）打开时，重定向到草稿入口，保证立即看到最新版
+    const requested = pathSegments.join("/");
+    if (requested === (tool.htmlEntry ?? "") && tool.htmlDraftEntry !== tool.htmlEntry) {
+      const redirect = new URL(request.url);
+      redirect.pathname = `/api/html-tools/content/${token}/${tool.htmlDraftEntry
+        .split("/")
+        .map(encodeURIComponent)
+        .join("/")}`;
+      return NextResponse.redirect(redirect, 307);
+    }
+  }
+
+  // 草稿优先、公开版兜底（草稿缺失的资源继续用公开版，避免旧引用 404）
+  const filePath = await resolveExistingHtmlToolAsset(
+    hasDraft
+      ? [
+          htmlToolDraftDirectory(tool.ownerId, tool.id),
+          htmlToolDirectory(tool.ownerId, tool.id),
+        ]
+      : [htmlToolDirectory(tool.ownerId, tool.id)],
+    pathSegments,
+  );
   if (!filePath) {
     return new NextResponse("Not found", { status: 404 });
   }
